@@ -2,22 +2,32 @@
 
 ``get_chat_model(role)`` returns a LangChain chat model for the configured provider.
 ``llm_slot()`` bounds how many model calls run at once, so fan-out stays under free-tier
-request limits. ``invoke_structured()`` is added in T-08; per-role providers, fallbacks
-and the response cache in T-53.
+request limits. ``invoke_structured()`` returns a validated Pydantic object, retrying once
+with the validation error, and records token usage per role. Per-role providers,
+fallbacks and the response cache arrive in T-53.
 """
 
 import asyncio
-import itertools
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from typing import Literal
+import logging
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
+from typing import Any, Literal
 from weakref import WeakKeyDictionary
 
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from pydantic import BaseModel, ValidationError
 
 from partner_agents.config import LLMProvider, Settings, get_settings
+from partner_agents.fakes import ScriptedChatModel
+from partner_agents.utils.retry import DEFAULT_POLICY, retry_async
+
+logger = logging.getLogger(__name__)
+
+# Transport retries for model calls (429 / 5xx / timeouts); tests swap in a zero-delay policy.
+RETRY_POLICY = DEFAULT_POLICY
 
 Role = Literal["router", "extractor", "writer"]
 
@@ -84,7 +94,7 @@ def _build_ollama(model: str, temperature: float, settings: Settings) -> BaseCha
 
 
 def _build_fake() -> BaseChatModel:
-    return GenericFakeChatModel(messages=itertools.repeat(AIMessage(content=FAKE_REPLY)))
+    return ScriptedChatModel.repeating(FAKE_REPLY)
 
 
 def get_chat_model(
@@ -127,3 +137,127 @@ async def llm_slot(settings: Settings | None = None) -> AsyncIterator[None]:
         semaphore = _semaphores[loop] = asyncio.Semaphore(limit)
     async with semaphore:
         yield
+
+
+# --- token usage --------------------------------------------------------------------
+
+_usage: ContextVar[dict[str, int] | None] = ContextVar("llm_usage", default=None)
+
+
+@contextmanager
+def track_usage() -> Iterator[dict[str, int]]:
+    """Collect total tokens per role for model calls made inside the block.
+
+    Tasks started inside the block share the same dict, so a fan-out is counted too. The
+    result is what ``RunRecord.tokens`` stores.
+    """
+    usage: dict[str, int] = {}
+    token = _usage.set(usage)
+    try:
+        yield usage
+    finally:
+        _usage.reset(token)
+
+
+def _record_usage(role: Role, message: AIMessage) -> None:
+    usage = _usage.get()
+    meta = message.usage_metadata
+    if usage is None or not meta:
+        return
+    total = meta.get("total_tokens") or meta.get("input_tokens", 0) + meta.get("output_tokens", 0)
+    usage[role] = usage.get(role, 0) + total
+
+
+# --- structured output --------------------------------------------------------------
+
+
+class StructuredOutputError(Exception):
+    """The model's reply did not match the schema, even after one retry with the error."""
+
+    def __init__(self, schema: str, detail: str) -> None:
+        super().__init__(f"{schema}: {detail}")
+        self.schema = schema
+        self.detail = detail
+
+
+def _describe(error: BaseException | None) -> str:
+    """A short, input-free description of why a reply was invalid."""
+    if isinstance(error, ValidationError):
+        problems = [
+            f"{'.'.join(str(part) for part in e['loc']) or 'reply'}: {e['msg']}"
+            for e in error.errors()
+        ]
+        return "; ".join(problems)[:600]
+    if error is not None:
+        return str(error)[:300]
+    return "the reply held no structured output"
+
+
+def _retry_messages(raw: AIMessage | None, detail: str) -> list[BaseMessage]:
+    note = HumanMessage(
+        content=f"Your previous reply was invalid: {detail}. "
+        "Reply again with output that matches the required schema exactly."
+    )
+    return [raw, note] if raw is not None else [note]
+
+
+async def _call(runnable: Any, conversation: Sequence[BaseMessage]) -> Any:
+    """One model call: bounded by the concurrency slot, retried on 429 / 5xx / timeouts."""
+
+    async def once() -> Any:
+        async with llm_slot():
+            return await runnable.ainvoke(list(conversation))
+
+    return await retry_async(once, policy=RETRY_POLICY)
+
+
+async def invoke_structured[T: BaseModel](
+    model: BaseChatModel,
+    schema: type[T],
+    messages: Sequence[BaseMessage],
+    *,
+    role: Role,
+) -> T:
+    """Ask ``model`` for a ``schema`` object.
+
+    An invalid reply gets one retry with the validation error appended to the
+    conversation. A second invalid reply raises ``StructuredOutputError``. Transport
+    errors (429, 5xx, timeouts) are retried separately and never trigger the validation
+    retry. Tokens of every attempt are recorded under ``role`` (see ``track_usage``).
+    """
+    runnable = model.with_structured_output(schema, include_raw=True)
+    conversation = list(messages)
+    for attempt in (1, 2):
+        raw: AIMessage | None = None
+        error: BaseException | None = None
+        parsed: T | None = None
+        try:
+            result = await _call(runnable, conversation)
+        except (ValidationError, OutputParserException) as exc:
+            error = exc
+        else:
+            if isinstance(result, dict):
+                raw_value = result.get("raw")
+                raw = raw_value if isinstance(raw_value, AIMessage) else None
+                error = result.get("parsing_error")
+                value = result.get("parsed")
+            else:
+                value = result
+            if error is None and value is not None:
+                try:
+                    parsed = value if isinstance(value, schema) else schema.model_validate(value)
+                except ValidationError as exc:
+                    error = exc
+        if raw is not None:
+            _record_usage(role, raw)
+        if parsed is not None:
+            return parsed
+        detail = _describe(error)
+        logger.warning(
+            "structured output invalid",
+            extra={"role": role, "schema": schema.__name__, "attempt": attempt},
+        )
+        if attempt == 2:
+            raise StructuredOutputError(schema.__name__, detail) from error
+        conversation = [*conversation, *_retry_messages(raw, detail)]
+    raise AssertionError("unreachable")  # pragma: no cover
