@@ -31,7 +31,7 @@
   - What: `config.Settings` (pydantic-settings) with every variable in §10. `.env.example` mirrors it with comments.
   - Done when: tests show safe defaults (`OUTREACH_MODE=outbox`, `VOICE_PROVIDER=mock`). An empty `QDRANT_URL` / `MONGODB_URI` selects the local/in-memory backends. `DEMO_MODE=true` overrides outreach and voice.
 
-- [ ] **T-03 CI** · 0.5 h · Deps: T-01
+- [x] **T-03 CI** · 0.5 h · Deps: T-01
   - What: GitHub Actions workflow running ruff, mypy and pytest on push and PR.
   - Done when: the first push shows a green run.
 
@@ -243,6 +243,7 @@
 |---|---|---|---|
 | 2026-10-31 | T-01 | `uv sync && uv run pytest` → 12 passed (`tests/test_smoke.py`); `ruff check .` clean; `mypy src` → no issues in 12 files | uv 0.12.5, CPython 3.12.14, pytest 9.2.0, ruff 0.17.3, mypy 2.4.1. ADR-015 records tooling; `ruff format` excludes `*.md` |
 | 2026-10-31 | T-02 | `tests/test_config.py`: `test_safe_defaults`, `test_empty_store_urls_select_local_backends`, `test_demo_mode_overrides_outreach_and_voice`, `test_env_example_loads_with_safe_defaults`; 42 passed, ruff + mypy clean | pydantic 2.14.2, pydantic-settings 2.16.2 (ADR-016). HLD §10: added `QDRANT_LOCAL_PATH`, `KB_MIN_SCORE` start 0.5, Gmail path defaults, validation rules |
+| 2026-10-31 | T-03 | First push green: https://github.com/lokifergusion9/cpg-partner-agents/actions/runs/41157481472 (lint, format, mypy, pytest) | `.github/workflows/ci.yml` on push to `main` + PRs, `uv sync --locked`. Actions bumped to `checkout@v7` / `setup-uv@v10.1.0` (Node 24) after a Node 20 deprecation warning |
 
 ## Blockers / decisions needed
 
