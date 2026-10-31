@@ -80,6 +80,7 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - Google Custom Search: setup friction and quota.
   - Perplexity: an answer engine, not raw results; we want URLs to fetch and verify ourselves.
 - **Consequences:** Two independent sources reduce outages. The DDG library is unofficial and may rate-limit or break, which is acceptable for a fallback. Check current free limits when setting up.
+- **As built (T-10, 2026-11-01):** Tavily is called through its REST API with `httpx` (no SDK), so tests mock it with `respx` (dev dependency). `ddgs` 9.x uses its own `primp` HTTP client, not httpx, so the DDG provider takes an injectable search function and is tested with a fake rather than respx. Packages added: `httpx`, `ddgs`, `tldextract` (ADR-023), `respx` (dev).
 
 ## ADR-007: Per-page hybrid evidence selection
 - **Status:** Accepted · 2026-10-30
@@ -245,3 +246,12 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - A hand-written email regex: misses quoting, IDN and length rules.
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
+
+## ADR-023: tldextract for registrable-domain de-duplication
+- **Status:** Accepted · 2026-11-01
+- **Context:** Scout keeps one hit per company (HLD §6.3): `www.acme.com`, `shop.acme.com` and `shop.acme.co.uk` must collapse to `acme.com` / `acme.co.uk`. That needs the Public Suffix List; "take the last two labels" is wrong for `co.uk`, `com.au`, `co.in`.
+- **Decision:** Use `tldextract`, configured with `suffix_list_urls=()` and no cache directory, so it reads the snapshot bundled in the package and never touches the network (tests stay offline, rule 4).
+- **Alternatives:**
+  - A hand-written list of multi-part suffixes: always incomplete, silently wrong for the ones missing.
+  - `tldextract` with live PSL fetching: network access at first use, and a writable cache directory on the read-only Space.
+- **Consequences:** The bundled list ages with the package version, so very new suffixes may be missed until the dependency is bumped. `requests-file`, `filelock` and `idna` come with it.
