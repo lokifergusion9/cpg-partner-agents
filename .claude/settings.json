@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" || exit 0; [ -f pyproject.toml ] || exit 0; out=$( (uv run ruff check . && uv run mypy src && uv run pytest -q) 2>&1 ) || { echo \"$out\" | tail -40 >&2; echo 'Commit blocked: ruff, mypy and pytest must all pass (CLAUDE.md, Definition of done).' >&2; exit 2; }",
+            "timeout": 300,
+            "statusMessage": "Running ruff, mypy and pytest before commit..."
+          }
+        ]
+      }
+    ]
+  }
+}
