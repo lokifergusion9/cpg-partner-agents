@@ -4,38 +4,13 @@ from typing import Any
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.runnables import Runnable, RunnableLambda
-from pydantic import Field
 
 from partner_agents import llm
+from partner_agents.config import Role
 from partner_agents.fakes import ScriptedChatModel
 from partner_agents.schemas import DiscoveryIntent, RouteDecision
 from partner_agents.utils.retry import RetryPolicy
-
-
-class FaultyModel(ScriptedChatModel):
-    """Raises the queued errors, one per transport call, before replaying its script."""
-
-    faults: list[BaseException] = Field(default_factory=list)
-    transport_calls: int = 0
-
-    def with_structured_output(  # type: ignore[override]
-        self, schema: Any, *, include_raw: bool = False, **kwargs: Any
-    ) -> Runnable[Any, Any]:
-        real = super().with_structured_output(schema, include_raw=include_raw, **kwargs)
-
-        async def call(messages: Any) -> Any:
-            self.transport_calls += 1
-            if self.faults:
-                raise self.faults.pop(0)
-            return await real.ainvoke(messages)
-
-        return RunnableLambda(call)
-
-
-class RateLimited(Exception):
-    status_code = 429
-
+from tests.helpers import FaultyModel, RateLimited
 
 VALID = DiscoveryIntent(
     partner_type="broker", product_category="cookies", raw_query="cookie brokers in CA"
@@ -47,7 +22,7 @@ def run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
-def ask(model: ScriptedChatModel, role: llm.Role = "router") -> DiscoveryIntent:
+def ask(model: ScriptedChatModel, role: Role = "router") -> DiscoveryIntent:
     return run(llm.invoke_structured(model, DiscoveryIntent, PROMPT, role=role))  # type: ignore[no-any-return]
 
 

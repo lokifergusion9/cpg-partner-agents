@@ -45,6 +45,7 @@ src/partner_agents/
   config.py        Settings (pydantic-settings). The only place env vars are read
   schemas.py       Domain models shared across modules (HLD §4)
   llm.py           get_chat_model(role) + invoke_structured(). The only place provider SDKs are imported
+  llm_cache.py     on-disk reply cache behind LLM_CACHE_DIR
   fakes.py         ScriptedChatModel: scripted replies for offline tests and LLM_PROVIDER=fake
   prompts/         Prompt constants, one module per agent, each with a PROMPT_VERSION
   graph/           state.py, charlie.py, scout.py, chase.py, call.py, build.py

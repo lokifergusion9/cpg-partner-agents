@@ -5,7 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from partner_agents import llm
-from partner_agents.config import Settings
+from partner_agents.config import Role, Settings
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -23,7 +23,7 @@ MODELS = {
 
 
 @pytest.mark.parametrize("role", ["router", "extractor", "writer"])
-def test_fake_provider_needs_no_keys_or_model_ids(role: llm.Role) -> None:
+def test_fake_provider_needs_no_keys_or_model_ids(role: Role) -> None:
     model = llm.get_chat_model(role, settings=make_settings(llm_provider="fake"))
     reply = model.invoke("hello")
     assert isinstance(reply, AIMessage)
@@ -46,9 +46,9 @@ def test_get_settings_is_used_when_none_is_passed(monkeypatch: pytest.MonkeyPatc
 @pytest.mark.parametrize(
     ("role", "expected"), [("router", 0.0), ("extractor", 0.0), ("writer", 0.3)]
 )
-def test_gemini_uses_the_role_model_and_temperature(role: llm.Role, expected: float) -> None:
+def test_gemini_uses_the_role_model_and_temperature(role: Role, expected: float) -> None:
     settings = make_settings(llm_provider="gemini", gemini_api_key="g-key-123", **MODELS)
-    model = llm.get_chat_model(role, settings=settings)
+    model = llm.get_chat_model(role, settings=settings).primary
     assert type(model).__name__ == "ChatGoogleGenerativeAI"
     assert model.model == f"{role}-model"  # type: ignore[attr-defined]
     assert model.temperature == expected  # type: ignore[attr-defined]
@@ -56,7 +56,7 @@ def test_gemini_uses_the_role_model_and_temperature(role: llm.Role, expected: fl
 
 def test_temperature_override_beats_the_role_default() -> None:
     settings = make_settings(llm_provider="groq", groq_api_key="q-key-123", **MODELS)
-    model = llm.get_chat_model("writer", temperature=0.7, settings=settings)
+    model = llm.get_chat_model("writer", temperature=0.7, settings=settings).primary
     assert type(model).__name__ == "ChatGroq"
     assert model.temperature == 0.7  # type: ignore[attr-defined]
     assert model.model_name == "writer-model"  # type: ignore[attr-defined]
@@ -66,10 +66,10 @@ def test_ollama_points_at_the_configured_host_with_a_timeout() -> None:
     settings = make_settings(
         llm_provider="ollama",
         ollama_base_url="http://100.64.0.7:11434",
-        llm_timeout_s=12,
+        ollama_timeout_s=12,
         **MODELS,
     )
-    model = llm.get_chat_model("extractor", settings=settings)
+    model = llm.get_chat_model("extractor", settings=settings).primary
     assert type(model).__name__ == "ChatOllama"
     assert model.base_url == "http://100.64.0.7:11434"  # type: ignore[attr-defined]
     assert model.client_kwargs == {"timeout": 12}  # type: ignore[attr-defined]
@@ -77,7 +77,7 @@ def test_ollama_points_at_the_configured_host_with_a_timeout() -> None:
 
 def test_sdk_retries_are_off_so_the_retry_utility_owns_the_budget() -> None:
     settings = make_settings(llm_provider="groq", groq_api_key="q-key-123", **MODELS)
-    model = llm.get_chat_model("router", settings=settings)
+    model = llm.get_chat_model("router", settings=settings).primary
     assert model.max_retries == 0  # type: ignore[attr-defined]
 
 

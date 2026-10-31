@@ -1,38 +1,63 @@
 """LLM layer (HLD §9). The only module that imports provider SDKs.
 
-``get_chat_model(role)`` returns a LangChain chat model for the configured provider.
-``llm_slot()`` bounds how many model calls run at once, so fan-out stays under free-tier
-request limits. ``invoke_structured()`` returns a validated Pydantic object, retrying once
-with the validation error, and records token usage per role. Per-role providers,
-fallbacks and the response cache arrive in T-53.
+``get_chat_model(role)`` returns a ``ModelChain``: the role's model plus its fallbacks.
+``invoke_structured()`` returns a validated Pydantic object. For each call it
+
+1. serves a cached reply when ``LLM_CACHE_DIR`` is set and the same question was answered;
+2. otherwise asks the first model that works: a model is retried on 429 / 5xx / timeouts
+   (``utils/retry.py``) and only when that budget is spent on a 429 / quota / connection
+   error does the next fallback get a turn (ADR-018);
+3. retries once, with the validation error appended, when the reply does not match.
+
+Token usage and the provider that really answered are recorded per role
+(``track_usage`` / ``track_providers``).
 """
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import Any, Literal
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 from weakref import WeakKeyDictionary
 
+from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import BaseModel, ValidationError
 
-from partner_agents.config import LLMProvider, Settings, get_settings
+from partner_agents.config import ModelSpec, Role, Settings, get_settings
 from partner_agents.fakes import ScriptedChatModel
-from partner_agents.utils.retry import DEFAULT_POLICY, retry_async
+from partner_agents.llm_cache import ResponseCache, cache_key
+from partner_agents.utils.retry import DEFAULT_POLICY, retry_async, status_code_of
 
 logger = logging.getLogger(__name__)
 
 # Transport retries for model calls (429 / 5xx / timeouts); tests swap in a zero-delay policy.
 RETRY_POLICY = DEFAULT_POLICY
 
-Role = Literal["router", "extractor", "writer"]
-
 # HLD §9. The writer is 0.3 for knowledge-base answers; ``chase_draft`` asks for 0.7.
-ROLE_TEMPERATURE: dict[Role, float] = {"router": 0.0, "extractor": 0.0, "writer": 0.3}
+ROLE_TEMPERATURE: dict[Role, float] = {
+    "router": 0.0,
+    "extractor": 0.0,
+    "writer": 0.3,
+    "classifier": 0.0,
+    "caller": 0.4,
+    "simulator": 0.8,
+    "judge": 0.0,
+}
+
+# A role without its own LLM_MODEL_<ROLE> uses another role's model id (HLD §9).
+_MODEL_FALLBACK_ROLE: dict[Role, Role] = {
+    "classifier": "router",
+    "caller": "writer",
+    "simulator": "writer",
+    "judge": "extractor",
+}
 
 # Stands in for a model reply when ``LLM_PROVIDER=fake`` and nothing scripted one.
 FAKE_REPLY = "fake model reply"
@@ -42,21 +67,25 @@ class LLMConfigError(ValueError):
     """The configured provider cannot be built (missing key or model id)."""
 
 
+# --- building models ----------------------------------------------------------------
+
+
 def _model_id(role: Role, settings: Settings) -> str:
-    model = getattr(settings, f"llm_model_{role}")
-    if not model:
-        raise LLMConfigError(
-            f"LLM_MODEL_{role.upper()} is not set. Model ids are config, not code: "
-            "check the provider's console for a current free-tier model."
-        )
-    return str(model)
+    for candidate in (role, _MODEL_FALLBACK_ROLE.get(role)):
+        model = getattr(settings, f"llm_model_{candidate}", None) if candidate else None
+        if model:
+            return str(model)
+    raise LLMConfigError(
+        f"LLM_MODEL_{role.upper()} is not set. Model ids are config, not code: "
+        "check the provider's console for a current free-tier model."
+    )
 
 
 def _build_gemini(model: str, temperature: float, settings: Settings) -> BaseChatModel:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     if settings.gemini_api_key is None:
-        raise LLMConfigError("LLM_PROVIDER=gemini needs GEMINI_API_KEY")
+        raise LLMConfigError("a gemini model needs GEMINI_API_KEY")
     # SDK-level retries are off: ``utils/retry.py`` owns the retry budget (HLD §9).
     return ChatGoogleGenerativeAI(
         model=model,
@@ -71,7 +100,7 @@ def _build_groq(model: str, temperature: float, settings: Settings) -> BaseChatM
     from langchain_groq import ChatGroq
 
     if settings.groq_api_key is None:
-        raise LLMConfigError("LLM_PROVIDER=groq needs GROQ_API_KEY")
+        raise LLMConfigError("a groq model needs GROQ_API_KEY")
     # Field names rather than aliases (model, api_key, timeout): mypy only knows the former.
     return ChatGroq(
         model_name=model,
@@ -89,12 +118,73 @@ def _build_ollama(model: str, temperature: float, settings: Settings) -> BaseCha
         model=model,
         temperature=temperature,
         base_url=settings.ollama_base_url,
-        client_kwargs={"timeout": settings.llm_timeout_s},
+        client_kwargs={"timeout": settings.ollama_timeout_s},
     )
 
 
-def _build_fake() -> BaseChatModel:
-    return ScriptedChatModel.repeating(FAKE_REPLY)
+@dataclass(frozen=True)
+class Candidate:
+    """One model in a chain. ``label`` is ``provider:model`` and names who answered."""
+
+    label: str
+    model: BaseChatModel
+
+
+def _build_candidate(spec: ModelSpec, temperature: float, settings: Settings) -> Candidate:
+    if spec.provider == "fake":
+        return Candidate("fake", ScriptedChatModel.repeating(FAKE_REPLY))
+    if spec.provider == "gemini":
+        return Candidate(spec.label, _build_gemini(spec.model, temperature, settings))
+    if spec.provider == "groq":
+        return Candidate(spec.label, _build_groq(spec.model, temperature, settings))
+    return Candidate(spec.label, _build_ollama(spec.model, temperature, settings))
+
+
+def _primary_spec(role: Role, settings: Settings) -> ModelSpec:
+    """``LLM_ROLES`` wins over ``LLM_PROVIDER`` plus the role's model id."""
+    override = settings.llm_roles.get(role)
+    if override is not None:
+        return override
+    if settings.llm_provider == "fake":
+        return ModelSpec(provider="fake")
+    return ModelSpec(provider=settings.llm_provider, model=_model_id(role, settings))
+
+
+class ModelChain(BaseChatModel):
+    """The models one role may use, in order, plus the reply cache directory.
+
+    ``invoke_structured`` understands the whole chain. Plain ``.invoke()`` talks to the
+    first model only, with no retry, fallback or cache.
+    """
+
+    role: str
+    candidates: list[Candidate]
+    cache_dir: Path | None = None
+
+    @property
+    def primary(self) -> BaseChatModel:
+        return self.candidates[0].model
+
+    @property
+    def label(self) -> str:
+        return self.candidates[0].label
+
+    @property
+    def _llm_type(self) -> str:
+        return "model-chain"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        reply = self.primary.invoke(messages, stop=stop, **kwargs)
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
+        return self.primary.with_structured_output(schema, **kwargs)
 
 
 def get_chat_model(
@@ -102,23 +192,21 @@ def get_chat_model(
     *,
     temperature: float | None = None,
     settings: Settings | None = None,
-) -> BaseChatModel:
-    """The chat model for ``role`` on ``LLM_PROVIDER``.
+) -> ModelChain:
+    """The model chain for ``role``.
 
     ``temperature`` overrides the role's default (for example the writer at 0.7 when
-    drafting emails). Raises ``LLMConfigError`` when a key or model id is missing.
+    drafting emails). Raises ``LLMConfigError`` when a key or model id is missing, for the
+    primary model or for any ``LLM_FALLBACKS`` entry.
     """
     settings = settings or get_settings()
     temp = ROLE_TEMPERATURE[role] if temperature is None else temperature
-    provider: LLMProvider = settings.llm_provider
-    if provider == "fake":
-        return _build_fake()
-    model = _model_id(role, settings)
-    if provider == "gemini":
-        return _build_gemini(model, temp, settings)
-    if provider == "groq":
-        return _build_groq(model, temp, settings)
-    return _build_ollama(model, temp, settings)
+    specs = [_primary_spec(role, settings), *settings.llm_fallbacks]
+    return ModelChain(
+        role=role,
+        candidates=[_build_candidate(spec, temp, settings) for spec in specs],
+        cache_dir=settings.llm_cache_dir,
+    )
 
 
 # --- concurrency --------------------------------------------------------------------
@@ -139,9 +227,10 @@ async def llm_slot(settings: Settings | None = None) -> AsyncIterator[None]:
         yield
 
 
-# --- token usage --------------------------------------------------------------------
+# --- token usage and providers ------------------------------------------------------
 
 _usage: ContextVar[dict[str, int] | None] = ContextVar("llm_usage", default=None)
+_providers: ContextVar[dict[str, str] | None] = ContextVar("llm_providers", default=None)
 
 
 @contextmanager
@@ -149,7 +238,7 @@ def track_usage() -> Iterator[dict[str, int]]:
     """Collect total tokens per role for model calls made inside the block.
 
     Tasks started inside the block share the same dict, so a fan-out is counted too. The
-    result is what ``RunRecord.tokens`` stores.
+    result is what ``RunRecord.tokens`` stores. A reply served from the cache costs 0.
     """
     usage: dict[str, int] = {}
     token = _usage.set(usage)
@@ -157,6 +246,21 @@ def track_usage() -> Iterator[dict[str, int]]:
         yield usage
     finally:
         _usage.reset(token)
+
+
+@contextmanager
+def track_providers() -> Iterator[dict[str, str]]:
+    """Collect, per role, the ``provider:model`` that really answered.
+
+    When a fallback answered some calls, the labels are joined with ``+``. The result is
+    what ``RunRecord.providers`` stores.
+    """
+    providers: dict[str, str] = {}
+    token = _providers.set(providers)
+    try:
+        yield providers
+    finally:
+        _providers.reset(token)
 
 
 def _record_usage(role: Role, message: AIMessage) -> None:
@@ -168,7 +272,50 @@ def _record_usage(role: Role, message: AIMessage) -> None:
     usage[role] = usage.get(role, 0) + total
 
 
-# --- structured output --------------------------------------------------------------
+def _record_provider(role: Role, label: str) -> None:
+    providers = _providers.get()
+    if providers is None:
+        return
+    seen = providers.get(role, "").split("+") if role in providers else []
+    if label not in seen:
+        providers[role] = "+".join([*seen, label])
+
+
+# --- fallback and structured output -------------------------------------------------
+
+_CONNECTION_ERROR_NAMES = frozenset(
+    {
+        "APIConnectionError",
+        "APITimeoutError",
+        "ConnectError",
+        "ConnectTimeout",
+        "ReadError",
+        "ReadTimeout",
+        "RemoteProtocolError",
+        "TimeoutException",
+    }
+)
+
+
+def is_fallback_worthy(exc: BaseException) -> bool:
+    """429, quota exhaustion, or a connection failure: the model cannot answer right now.
+
+    A validation failure never qualifies, and neither does a 4xx/5xx that another model
+    would hit just the same.
+    """
+    if isinstance(exc, (ValidationError, OutputParserException)):
+        return False
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    if type(exc).__name__ in _CONNECTION_ERROR_NAMES:
+        return True
+    code = status_code_of(exc)
+    if code is None and isinstance(getattr(exc, "code", None), int):
+        code = exc.code  # type: ignore[attr-defined]  # google-genai errors carry .code
+    if code == 429:
+        return True
+    text = str(exc).lower()
+    return "quota" in text or "resource_exhausted" in text
 
 
 class StructuredOutputError(Exception):
@@ -211,12 +358,55 @@ async def _call(runnable: Any, conversation: Sequence[BaseMessage]) -> Any:
     return await retry_async(once, policy=RETRY_POLICY)
 
 
+async def _call_chain(
+    candidates: Sequence[Candidate],
+    make_runnable: Callable[[BaseChatModel], Any],
+    conversation: Sequence[BaseMessage],
+    role: Role,
+) -> tuple[Any, str]:
+    """The first reply any candidate gives, and the label of the candidate that gave it."""
+    for index, candidate in enumerate(candidates):
+        try:
+            return await _call(make_runnable(candidate.model), conversation), candidate.label
+        except Exception as exc:
+            if index + 1 == len(candidates) or not is_fallback_worthy(exc):
+                raise
+            logger.warning(
+                "model unavailable, trying the next one",
+                extra={
+                    "role": role,
+                    "failed": candidate.label,
+                    "next": candidates[index + 1].label,
+                    "error_type": type(exc).__name__,
+                },
+            )
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+async def _cached_reply[T: BaseModel](
+    cache: ResponseCache | None, key: str, schema: type[T], role: Role
+) -> T | None:
+    if cache is None:
+        return None
+    entry = await cache.get(key)
+    if entry is None:
+        return None
+    try:
+        parsed = schema.model_validate_json(entry["parsed"])
+    except (KeyError, TypeError, ValidationError):
+        return None  # a stale or damaged entry is a miss
+    _record_provider(role, str(entry.get("label", "cache")))
+    logger.info("llm cache hit", extra={"role": role, "schema": schema.__name__})
+    return parsed
+
+
 async def invoke_structured[T: BaseModel](
     model: BaseChatModel,
     schema: type[T],
     messages: Sequence[BaseMessage],
     *,
     role: Role,
+    prompt_version: str = "",
 ) -> T:
     """Ask ``model`` for a ``schema`` object.
 
@@ -224,15 +414,36 @@ async def invoke_structured[T: BaseModel](
     conversation. A second invalid reply raises ``StructuredOutputError``. Transport
     errors (429, 5xx, timeouts) are retried separately and never trigger the validation
     retry. Tokens of every attempt are recorded under ``role`` (see ``track_usage``).
+
+    With a ``ModelChain`` the call also uses the fallbacks and the reply cache. The cache
+    key covers the primary model, temperature, ``prompt_version``, the schema and the
+    messages; only valid replies are cached.
     """
-    runnable = model.with_structured_output(schema, include_raw=True)
+    chain = model if isinstance(model, ModelChain) else None
+    candidates = chain.candidates if chain else [Candidate(type(model).__name__, model)]
+    cache = ResponseCache(chain.cache_dir) if chain and chain.cache_dir else None
+    key = cache_key(
+        candidates[0].label,
+        getattr(candidates[0].model, "temperature", None),
+        prompt_version,
+        schema.__name__,
+        schema.model_json_schema(),
+        [(m.type, m.content) for m in messages],
+    )
+    if (hit := await _cached_reply(cache, key, schema, role)) is not None:
+        return hit
+
+    def make_runnable(candidate_model: BaseChatModel) -> Any:
+        return candidate_model.with_structured_output(schema, include_raw=True)
+
     conversation = list(messages)
     for attempt in (1, 2):
         raw: AIMessage | None = None
         error: BaseException | None = None
         parsed: T | None = None
+        label = candidates[0].label
         try:
-            result = await _call(runnable, conversation)
+            result, label = await _call_chain(candidates, make_runnable, conversation, role)
         except (ValidationError, OutputParserException) as exc:
             error = exc
         else:
@@ -251,6 +462,9 @@ async def invoke_structured[T: BaseModel](
         if raw is not None:
             _record_usage(role, raw)
         if parsed is not None:
+            _record_provider(role, label)
+            if cache is not None:
+                await cache.put(key, {"label": label, "parsed": parsed.model_dump_json()})
             return parsed
         detail = _describe(error)
         logger.warning(

@@ -204,6 +204,7 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - **Dev response cache.** `LLM_CACHE_DIR` (default empty = off) caches responses on disk keyed by `(provider, model, prompt_version, sha256(messages), temperature)`; the eval cache (ADR-014) uses the same code.
   - **Remote Ollama** through `OLLAMA_BASE_URL` on the Tailscale IP. Ollama is never exposed to the public internet (it has no auth). Timeout `OLLAMA_TIMEOUT_S` (60 s).
   - Unit tests stay on fake models; daily development uses the cache and Ollama; Gemini/Groq are used for extraction quality, the final eval run and the public demo.
+- **As built (T-53, 2026-11-01):** the per-role override is the single variable `LLM_ROLES` (`role=provider:model`, split on the first `:`), not `LLM_PROVIDER_<ROLE>`. The fallback is a predicate-gated walk of the chain inside `invoke_structured`, not `with_fallbacks()`: that helper filters by exception class only, so it could not tell a 429 from other API errors and would also skip the retry budget. Behaviour is as decided above.
 - **Alternatives:**
   - One paid provider: violates PRD G6.
   - A routing proxy such as LiteLLM: another service and dependency for what `with_fallbacks()` already does.

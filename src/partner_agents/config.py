@@ -6,9 +6,9 @@ This is the only module that reads environment variables. Everything else receiv
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_core import PydanticUseDefault
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -17,6 +17,44 @@ SearchProviderName = Literal["tavily", "ddg"]
 OutreachMode = Literal["outbox", "gmail_draft", "gmail_send"]
 VoiceProvider = Literal["mock", "vapi"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+Role = Literal["router", "extractor", "writer", "classifier", "caller", "simulator", "judge"]
+
+
+class ModelSpec(BaseModel):
+    """A ``provider:model`` pair from ``LLM_ROLES`` or ``LLM_FALLBACKS`` (ADR-018)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    provider: LLMProvider
+    model: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.provider}:{self.model}" if self.model else self.provider
+
+
+def parse_model_spec(text: str) -> ModelSpec:
+    """``ollama:qwen2.5:7b`` -> provider ``ollama``, model ``qwen2.5:7b`` (first ``:`` splits)."""
+    provider, _, model = text.strip().partition(":")
+    if provider not in get_args(LLMProvider):
+        raise ValueError(f"unknown LLM provider {provider!r} in {text!r}")
+    if provider != "fake" and not model.strip():
+        raise ValueError(f"{text!r} needs a model id, as provider:model")
+    return ModelSpec(provider=provider, model=model.strip())  # type: ignore[arg-type]
+
+
+def parse_role_overrides(text: str) -> dict[str, ModelSpec]:
+    """``simulator=ollama:qwen2.5:7b,judge=groq:llama`` -> role -> spec."""
+    overrides: dict[str, ModelSpec] = {}
+    for item in (part.strip() for part in text.split(",")):
+        if not item:
+            continue
+        role, sep, spec = item.partition("=")
+        if not sep or role.strip() not in get_args(Role):
+            raise ValueError(f"LLM_ROLES entries look like role=provider:model, got {item!r}")
+        overrides[role.strip()] = parse_model_spec(spec)
+    return overrides
+
 
 # Domains that are never partners themselves: social networks, marketplaces, large
 # directories and news sites (HLD §6.3). SEARCH_DOMAIN_BLOCKLIST adds to this list.
@@ -79,8 +117,17 @@ class Settings(BaseSettings):
     llm_model_router: str | None = None
     llm_model_extractor: str | None = None
     llm_model_writer: str | None = None
+    # Added for the call agent and the eval (ADR-018). Empty -> the default in HLD §9.
+    llm_model_classifier: str | None = None
+    llm_model_caller: str | None = None
+    llm_model_simulator: str | None = None
+    llm_model_judge: str | None = None
+    llm_roles: Annotated[dict[Role, ModelSpec], NoDecode] = Field(default_factory=dict)
+    llm_fallbacks: Annotated[list[ModelSpec], NoDecode] = Field(default_factory=list)
+    llm_cache_dir: Path | None = None
     llm_max_concurrency: int = Field(4, ge=1)
     llm_timeout_s: float = Field(60, gt=0)
+    ollama_timeout_s: float = Field(60, gt=0)
 
     # Embeddings
     embedding_model: str = "BAAI/bge-small-en-v1.5"
@@ -160,6 +207,11 @@ class Settings(BaseSettings):
         "llm_model_router",
         "llm_model_extractor",
         "llm_model_writer",
+        "llm_model_classifier",
+        "llm_model_caller",
+        "llm_model_simulator",
+        "llm_model_judge",
+        "llm_cache_dir",
         "vapi_phone_number_id",
         "langfuse_host",
         "search_fallback",
@@ -178,6 +230,18 @@ class Settings(BaseSettings):
         """A blank path would mean the working directory, i.e. inside the repo."""
         if isinstance(value, str) and not value.strip():
             raise PydanticUseDefault()
+        return value
+
+    @field_validator("llm_roles", mode="before")
+    @classmethod
+    def _parse_llm_roles(cls, value: Any) -> Any:
+        return parse_role_overrides(value) if isinstance(value, str) else value
+
+    @field_validator("llm_fallbacks", mode="before")
+    @classmethod
+    def _parse_llm_fallbacks(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [parse_model_spec(item) for item in value.split(",") if item.strip()]
         return value
 
     @field_validator(
