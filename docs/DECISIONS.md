@@ -234,3 +234,12 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - Browser Web Speech API: free, but Chrome-only and not testable server-side.
   - `edge-tts`: free but unofficial and can break without notice.
 - **Consequences:** Two new dependencies and a larger image (models baked at build time). Speech is slower on the free CPU Space; the demo says so. Piper's newer releases are GPL-3.0 and each voice has its own licence; the README lists the voice and its licence.
+
+## ADR-022: email-validator for `EmailStr` and contact verification
+- **Status:** Accepted · 2026-11-01
+- **Context:** `BrandProfile.sender_email` is an `EmailStr` (HLD §4), and `verify/contacts.py` rejects malformed addresses with `invalid_format` (HLD §6.8). Both need a real RFC-aware syntax check, offline. Pydantic's `EmailStr` imports the `email-validator` package.
+- **Decision:** Depend on `pydantic[email]` (which pulls `email-validator`). Syntax checks only (`check_deliverability=False`), so no DNS lookup unless `VERIFY_MX` is on.
+- **Alternatives:**
+  - A hand-written email regex: misses quoting, IDN and length rules.
+  - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
+- **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.

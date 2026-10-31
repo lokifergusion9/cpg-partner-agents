@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: LogLevel = "INFO"
 
+    # Graph nodes: true re-raises unexpected exceptions instead of recording a StageError
+    strict_nodes: bool = False
+
     # API and demo
     app_api_key: SecretStr | None = None
     demo_mode: bool = False

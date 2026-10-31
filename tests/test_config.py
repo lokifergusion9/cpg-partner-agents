@@ -18,6 +18,7 @@ def test_safe_defaults() -> None:
     assert s.voice_provider == "mock"
     assert s.demo_mode is False
     assert s.verify_mx is False
+    assert s.strict_nodes is False
     assert s.outreach_allowlist == []
     assert s.voice_allowlist == []
 

@@ -2,7 +2,8 @@
 
 - ``configure_logging()`` installs one JSON handler on the root logger.
 - ``run_context()`` sets the ``run_id`` that every log record carries automatically.
-- ``stage_timer()`` / ``timed_node()`` record ``timings_ms`` per stage or graph node.
+- ``stage_timer()`` / ``timed_node()`` record ``timings_ms`` per stage or graph node;
+  ``timed_node()`` also turns an unexpected exception into a ``StageError``.
 - ``RedactionFilter`` removes secrets at every level, and emails and phone numbers at
   INFO and above (CLAUDE.md hard rule 5).
 """
@@ -18,7 +19,8 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
-from partner_agents.config import Settings
+from partner_agents.config import Settings, get_settings
+from partner_agents.schemas import StageError
 
 _run_id: ContextVar[str | None] = ContextVar("run_id", default=None)
 _node: ContextVar[str | None] = ContextVar("node", default=None)
@@ -70,13 +72,19 @@ def stage_timer(stage: str, timings: MutableMapping[str, int]) -> Iterator[None]
 NodeUpdate = dict[str, Any]
 
 
+def _stage_error(stage: str, exc: Exception) -> StageError:
+    # The message goes into graph state and the API, so contact values are removed here too.
+    return StageError(stage=stage, code=type(exc).__name__, message=redact_contacts(str(exc)))
+
+
 def timed_node[**P](
     name: str,
 ) -> Callable[[Callable[P, Awaitable[NodeUpdate | None]]], Callable[P, Awaitable[NodeUpdate]]]:
-    """Decorate an async graph node so its state update carries ``timings_ms[name]``.
+    """Decorate an async graph node (HLD §11).
 
-    Exceptions propagate unchanged here. Converting them into ``StageError`` entries
-    (HLD §11) is added with the domain schemas (T-06).
+    The state update carries ``timings_ms[name]``. An unexpected exception becomes a
+    ``StageError`` in the update's ``errors`` so a partial failure never crashes the run.
+    With ``STRICT_NODES=true`` it is re-raised instead.
     """
 
     def decorate(
@@ -85,8 +93,14 @@ def timed_node[**P](
         @functools.wraps(fn)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> NodeUpdate:
             timings: dict[str, int] = {}
-            with stage_timer(name, timings):
-                update = await fn(*args, **kwargs)
+            try:
+                with stage_timer(name, timings):
+                    update = await fn(*args, **kwargs)
+            except Exception as exc:
+                if get_settings().strict_nodes:
+                    raise
+                logger.exception("node failed", extra={"error_type": type(exc).__name__})
+                update = {"errors": [_stage_error(name, exc)]}
             out = dict(update or {})
             out["timings_ms"] = {**out.get("timings_ms", {}), **timings}
             return out

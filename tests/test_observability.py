@@ -9,6 +9,7 @@ import pytest
 
 from partner_agents import observability as obs
 from partner_agents.config import Settings
+from partner_agents.schemas import StageError
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -45,6 +46,12 @@ def capture() -> Iterator[Capture]:
     package.handlers = []
     package.setLevel(logging.NOTSET)
     package.propagate = True
+
+
+@pytest.fixture(autouse=True)
+def _lenient_nodes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A developer's .env must not switch nodes to strict mode under these tests."""
+    monkeypatch.setenv("STRICT_NODES", "false")
 
 
 @pytest.fixture
@@ -141,6 +148,55 @@ def test_timed_node_accepts_none_update(fake_clock: list[float]) -> None:
         return None
 
     assert asyncio.run(refuse({})) == {"timings_ms": {"refuse": 1}}
+
+
+def test_failing_node_returns_a_stage_error(fake_clock: list[float]) -> None:
+    fake_clock.extend([0.0, 0.007])
+
+    @obs.timed_node("scout_fetch")
+    async def scout_fetch(state: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("could not reach buyer@retailer.example")
+
+    update = asyncio.run(scout_fetch({}))
+    assert update["timings_ms"] == {"scout_fetch": 7}
+    [error] = update["errors"]
+    assert isinstance(error, StageError)
+    assert (error.stage, error.code) == ("scout_fetch", "RuntimeError")
+    assert error.message == "could not reach [email]"
+    assert obs.current_node() is None
+
+
+def test_failing_node_keeps_going_when_it_returns_nothing_else(fake_clock: list[float]) -> None:
+    fake_clock.extend([0.0, 0.001])
+
+    @obs.timed_node("scout_verify")
+    async def scout_verify(state: dict[str, Any]) -> None:
+        raise ValueError("bad page")
+
+    assert set(asyncio.run(scout_verify({}))) == {"errors", "timings_ms"}
+
+
+def test_failing_node_is_reraised_under_strict_nodes(
+    monkeypatch: pytest.MonkeyPatch, fake_clock: list[float]
+) -> None:
+    fake_clock.extend([0.0, 0.001])
+    monkeypatch.setenv("STRICT_NODES", "true")
+
+    @obs.timed_node("scout_fetch")
+    async def scout_fetch(state: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(scout_fetch({}))
+
+
+def test_cancellation_is_not_swallowed_by_a_node() -> None:
+    @obs.timed_node("scout_fetch")
+    async def scout_fetch(state: dict[str, Any]) -> dict[str, Any]:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(scout_fetch({}))
 
 
 # --- redaction ----------------------------------------------------------------------

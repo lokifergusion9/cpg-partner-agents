@@ -631,6 +631,7 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `VAPI_API_KEY` / `VAPI_PHONE_NUMBER_ID` / `VOICE_ALLOWLIST` | — | stretch |
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` / `_HOST` | — | tracing is enabled when set |
 | `LOG_LEVEL` | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR`; contact values are redacted at `INFO`+ |
+| `STRICT_NODES` | `false` | `true` makes `timed_node` re-raise unexpected exceptions instead of recording a `StageError` (tests, debugging) |
 | `APP_API_KEY` | — | protects `/api` |
 | `DEMO_MODE` | `false` | forces outbox + mock voice, caps `max_results` at 5, caps simulated calls at 3 per user per hour |
 | `RATE_LIMIT_RUNS_PER_HOUR` | `5` | per user/IP, discovery runs |
@@ -650,7 +651,7 @@ Validation rules in `Settings`: secrets are `SecretStr` (masked in `repr` and du
 | Qdrant / Mongo unavailable at startup | `/health` reports degraded. Requests that need the store return `503 store_unavailable`. |
 | Approval never arrives | The thread stays paused. Drafts remain `pending_approval`. No timeouts send anything. |
 
-Every node is wrapped by a decorator that records `timings_ms[node]`, catches unexpected exceptions into `StageError`, and re-raises only for programming errors in tests (`STRICT_NODES=true`).
+Every node is wrapped by a decorator (`observability.timed_node`) that records `timings_ms[node]`, catches unexpected exceptions into a `StageError` in the update's `errors` (code = the exception class name, message redacted of contact values), and re-raises only for programming errors in tests (`STRICT_NODES=true`).
 
 ## 12. Security and safety (threat model)
 

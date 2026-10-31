@@ -63,7 +63,7 @@ M1 also gains T-53 (LLM cache, per-role providers, fallback chain: 2 h).
 
 ## M1: Schemas, LLM layer, repository
 
-- [ ] **T-06 Domain schemas** · 1.5 h · Deps: T-01
+- [x] **T-06 Domain schemas** · 1.5 h · Deps: T-01
   - What: `schemas.py` exactly as in §4. Then finish the §11 node decorator (`observability.timed_node`, added in T-04 with timing only): catch unexpected exceptions into a `StageError` in the update's `errors`, and re-raise when `STRICT_NODES=true` (add the setting to `Settings`, `.env.example` and §10).
   - Done when: tests cover the `max_results` bounds, `outreach_eligible` logic, the `ExtractionResult` max length, the `EmailDraft` subject length and JSON round-trip, plus a failing node returning a `StageError` (and raising under `STRICT_NODES`).
 
@@ -308,11 +308,12 @@ M1 also gains T-53 (LLM cache, per-role providers, fallback chain: 2 h).
 | 2026-10-31 | T-03 | First push green: https://github.com/lokifergusion9/cpg-partner-agents/actions/runs/41157481472 (lint, format, mypy, pytest) | `.github/workflows/ci.yml` on push to `main` + PRs, `uv sync --locked`. Actions bumped to `checkout@v7` / `setup-uv@v10.1.0` (Node 24) after a Node 20 deprecation warning |
 | 2026-10-31 | T-04 | `tests/test_observability.py`: `test_stage_timer_records_timing_and_logs_it`, `test_timed_node_adds_timing_to_state_update`, `test_run_id_appears_in_log_record`, `test_contacts_are_redacted_at_info`, `test_configured_secrets_are_redacted_at_every_level`; 69 passed, ruff + mypy clean | Added `LOG_LEVEL` (HLD §10). `StageError` capture + `STRICT_NODES` moved into T-06, since `StageError` lives in `schemas.py` |
 | 2026-10-31 | T-05 | `tests/utils/test_retry.py`: `test_succeeds_after_n_transient_failures`, `test_non_retryable_error_raises_immediately`, `test_gives_up_after_max_attempts_and_reraises_last_error`, `test_retry_after_seconds_header_is_honoured`, `test_retry_after_http_date_is_honoured` (sleep + clock injected); 110 passed, ruff + mypy clean | No new deps: errors classified by duck typing (`status_code` / `response.status_code`, timeouts). Retry-After above `max_retry_after_s` (60 s) gives up instead of waiting |
+| 2026-11-01 | T-06 | `tests/test_schemas.py`: `test_max_results_rejects_out_of_bounds`, `test_outreach_eligible`, `test_extraction_accepts_five_leads_and_rejects_six`, `test_evidence_quote_is_capped_at_300_chars`, `test_email_subject_is_capped_at_80_chars`, `test_json_round_trip` (12 models); `tests/test_observability.py`: `test_failing_node_returns_a_stage_error`, `test_failing_node_is_reraised_under_strict_nodes`; 156 passed, ruff + mypy clean | pydantic 2.14.2. HLD §4 models only; §4.1 call models stay in T-54. New dependency `pydantic[email]` (ADR-022) for `BrandProfile.sender_email`. `STRICT_NODES` added to `Settings`, `.env.example`, HLD §10/§11. `StageError.message` is passed through `redact_contacts`; `CancelledError` is not caught. **T-24:** `GraphInterrupt` derives from `Exception`, so `approval_gate` must not be wrapped as-is (let `timed_node` re-raise it) |
 
 ## Blockers / decisions needed
 
 <!-- Anything waiting on a human decision. Remove once resolved (and record an ADR if it was a design choice). -->
-- **Next up: T-06** (schemas + the `StageError` / `STRICT_NODES` part of the node decorator moved from T-04). Week 1 starts 2026-11-01.
+- **Next up: T-07** (LLM factory; Deps T-02, T-05 done). Week 1 started 2026-11-01.
 - **Plan change 2026-10-31.** Added the call agent (M6, T-53 → T-62; ADR-017 → ADR-021), renumbered M6–M9 to M7–M10, and moved to a 4-week schedule. PRD, HLD, EVAL and CLAUDE.md updated together.
 - **Friend's Ollama machine (open).** Confirm the GPU and VRAM, then pick the `simulator` / `judge` models (7B–8B for 6–8 GB VRAM, 14B for 12 GB+). Needed by T-53's live check.
 - **Commit hook scope (open).** `.claude/settings.json` gates `git commit` with ruff/mypy/pytest, but its `if: Bash(git commit*)` condition is not applied, so the checks run before every Bash call (harmless while green, slower). Decide whether to move the condition into the hook script.
