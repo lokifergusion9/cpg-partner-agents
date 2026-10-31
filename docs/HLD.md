@@ -426,6 +426,7 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `VOICE_PROVIDER` | `mock` | `mock` \| `vapi` |
 | `VAPI_API_KEY` / `VAPI_PHONE_NUMBER_ID` / `VOICE_ALLOWLIST` | — | stretch |
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` / `_HOST` | — | tracing is enabled when set |
+| `LOG_LEVEL` | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR`; contact values are redacted at `INFO`+ |
 | `APP_API_KEY` | — | protects `/api` |
 | `DEMO_MODE` | `false` | forces outbox + mock voice, caps `max_results` at 5 |
 | `RATE_LIMIT_RUNS_PER_HOUR` | `5` | per user/IP, discovery runs |
@@ -463,6 +464,7 @@ Every node is wrapped by a decorator that records `timings_ms[node]`, catches un
 ## 13. Observability
 
 - **Run context.** `run_id` in a contextvar. JSON logs include `run_id`, `node` and `duration_ms`.
+- **Redaction.** A handler filter (`observability.RedactionFilter`) replaces configured secret values and well-known key shapes at every level, and emails and phone numbers at `INFO` and above, in the message, format args, `extra` fields and exception text.
 - **Timings.** The node decorator writes `timings_ms`. The `runs` collection stores totals, tokens per role and prompt versions.
 - **Tracing.** When the Langfuse keys are set, a callback handler is attached to `graph.ainvoke`. Node names become spans, and the prompt version is added to metadata. The trace URL is saved to the `RunRecord`.
 - **Cost.** Tokens are recorded per role. `config.PRICE_TABLE` estimates the would-be cost at paid rates, for reporting only.

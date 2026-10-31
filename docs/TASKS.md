@@ -35,7 +35,7 @@
   - What: GitHub Actions workflow running ruff, mypy and pytest on push and PR.
   - Done when: the first push shows a green run.
 
-- [ ] **T-04 Observability base** · 1 h · Deps: T-02
+- [x] **T-04 Observability base** · 1 h · Deps: T-02
   - What: JSON log formatter, a `run_id` contextvar, the `stage_timer`/node decorator (§11) and a redaction filter (keys, emails, phones).
   - Done when: tests assert that the timing is recorded, `run_id` appears in the log record, and an email in a log message is redacted.
 
@@ -46,8 +46,8 @@
 ## M1: Schemas, LLM layer, repository
 
 - [ ] **T-06 Domain schemas** · 1.5 h · Deps: T-01
-  - What: `schemas.py` exactly as in §4.
-  - Done when: tests cover the `max_results` bounds, `outreach_eligible` logic, the `ExtractionResult` max length, the `EmailDraft` subject length and JSON round-trip.
+  - What: `schemas.py` exactly as in §4. Then finish the §11 node decorator (`observability.timed_node`, added in T-04 with timing only): catch unexpected exceptions into a `StageError` in the update's `errors`, and re-raise when `STRICT_NODES=true` (add the setting to `Settings`, `.env.example` and §10).
+  - Done when: tests cover the `max_results` bounds, `outreach_eligible` logic, the `ExtractionResult` max length, the `EmailDraft` subject length and JSON round-trip, plus a failing node returning a `StageError` (and raising under `STRICT_NODES`).
 
 - [ ] **T-07 LLM factory** · 1.5 h · Deps: T-02, T-05
   - What: `llm.get_chat_model(role)` for `gemini` / `groq` / `ollama` / `fake` with per-role temperatures (§9), plus the global concurrency semaphore.
@@ -244,6 +244,7 @@
 | 2026-10-31 | T-01 | `uv sync && uv run pytest` → 12 passed (`tests/test_smoke.py`); `ruff check .` clean; `mypy src` → no issues in 12 files | uv 0.12.5, CPython 3.12.14, pytest 9.2.0, ruff 0.17.3, mypy 2.4.1. ADR-015 records tooling; `ruff format` excludes `*.md` |
 | 2026-10-31 | T-02 | `tests/test_config.py`: `test_safe_defaults`, `test_empty_store_urls_select_local_backends`, `test_demo_mode_overrides_outreach_and_voice`, `test_env_example_loads_with_safe_defaults`; 42 passed, ruff + mypy clean | pydantic 2.14.2, pydantic-settings 2.16.2 (ADR-016). HLD §10: added `QDRANT_LOCAL_PATH`, `KB_MIN_SCORE` start 0.5, Gmail path defaults, validation rules |
 | 2026-10-31 | T-03 | First push green: https://github.com/lokifergusion9/cpg-partner-agents/actions/runs/41157481472 (lint, format, mypy, pytest) | `.github/workflows/ci.yml` on push to `main` + PRs, `uv sync --locked`. Actions bumped to `checkout@v7` / `setup-uv@v10.1.0` (Node 24) after a Node 20 deprecation warning |
+| 2026-10-31 | T-04 | `tests/test_observability.py`: `test_stage_timer_records_timing_and_logs_it`, `test_timed_node_adds_timing_to_state_update`, `test_run_id_appears_in_log_record`, `test_contacts_are_redacted_at_info`, `test_configured_secrets_are_redacted_at_every_level`; 69 passed, ruff + mypy clean | Added `LOG_LEVEL` (HLD §10). `StageError` capture + `STRICT_NODES` moved into T-06, since `StageError` lives in `schemas.py` |
 
 ## Blockers / decisions needed
 

@@ -16,6 +16,7 @@ LLMProvider = Literal["gemini", "groq", "ollama", "fake"]
 SearchProviderName = Literal["tavily", "ddg"]
 OutreachMode = Literal["outbox", "gmail_draft", "gmail_send"]
 VoiceProvider = Literal["mock", "vapi"]
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
 # Domains that are never partners themselves: social networks, marketplaces, large
 # directories and news sites (HLD §6.3). SEARCH_DOMAIN_BLOCKLIST adds to this list.
@@ -133,6 +134,9 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr | None = None
     langfuse_host: str | None = None
 
+    # Logging
+    log_level: LogLevel = "INFO"
+
     # API and demo
     app_api_key: SecretStr | None = None
     demo_mode: bool = False
@@ -186,10 +190,10 @@ class Settings(BaseSettings):
     def _lowercase(cls, value: list[str]) -> list[str]:
         return [item.lower() for item in value]
 
-    @field_validator("default_phone_region")
+    @field_validator("default_phone_region", "log_level", mode="before")
     @classmethod
-    def _upper_region(cls, value: str) -> str:
-        return value.upper()
+    def _upper(cls, value: Any) -> Any:
+        return value.upper() if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def _apply_safety_rules(self) -> "Settings":
