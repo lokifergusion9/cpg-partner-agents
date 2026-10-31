@@ -250,4 +250,6 @@
 ## Blockers / decisions needed
 
 <!-- Anything waiting on a human decision. Remove once resolved (and record an ADR if it was a design choice). -->
-- None yet.
+- **Next up: T-06** (schemas + the `StageError` / `STRICT_NODES` part of the node decorator moved from T-04).
+- **Commit hook scope (open).** `.claude/settings.json` gates `git commit` with ruff/mypy/pytest, but its `if: Bash(git commit*)` condition is not applied, so the checks run before every Bash call (harmless while green, slower). Decide whether to move the condition into the hook script.
+- **Retry-After ceiling (open).** `utils/retry.py` gives up when `Retry-After` > 60 s instead of waiting (keeps runs inside the 45 s p95 budget). Confirm or change.
