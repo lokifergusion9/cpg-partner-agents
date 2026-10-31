@@ -601,6 +601,7 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | for example a friend's machine over Tailscale |
 | `LLM_MODEL_ROUTER` / `_EXTRACTOR` / `_WRITER` | — | model ids per role |
 | `LLM_MAX_CONCURRENCY` | `4` | stays under free-tier RPM |
+| `LLM_TIMEOUT_S` | `60` | per-request timeout for every provider; SDK-level retries are off (`utils/retry.py` owns retries) |
 | `LLM_MODEL_CLASSIFIER` / `_CALLER` / `_SIMULATOR` / `_JUDGE` | — | added in T-53; empty → the defaults in §9 |
 | `LLM_ROLES` | empty | added in T-53; e.g. `simulator=ollama:qwen2.5:7b,judge=groq:<model>` |
 | `LLM_FALLBACKS` | empty | added in T-53; e.g. `groq:<model>,gemini:<model>` |

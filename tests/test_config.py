@@ -27,6 +27,7 @@ def test_defaults_match_hld_table() -> None:
     s = make_settings()
     assert s.llm_provider == "gemini"
     assert s.llm_max_concurrency == 4
+    assert s.llm_timeout_s == 60
     assert s.embedding_model == "BAAI/bge-small-en-v1.5"
     assert (s.search_provider, s.search_fallback) == ("tavily", "ddg")
     assert (s.chunk_tokens, s.chunk_overlap) == (1000, 150)

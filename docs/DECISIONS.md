@@ -39,6 +39,7 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - Hugging Face Inference was rejected because its free quota is small for this call volume. HF is used for hosting instead (ADR-010).
 - **Consequences:** One place to change providers, plus a quality/latency comparison table. We accept the lowest-common-denominator structured-output behaviour, mitigated by validate + retry (ADR-008).
 - **Note:** Free-tier input may be used by providers to improve their products. Only public data is used (PRD non-goals).
+- **Packages (added 2026-11-01, T-07):** `langchain-core`, `langchain-google-genai`, `langchain-groq`, `langchain-ollama`. Each provider SDK is imported lazily inside `llm.py` only.
 
 ## ADR-003: Local embeddings (`BAAI/bge-small-en-v1.5`)
 - **Status:** Accepted · 2026-10-30

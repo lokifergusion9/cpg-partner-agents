@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     llm_model_extractor: str | None = None
     llm_model_writer: str | None = None
     llm_max_concurrency: int = Field(4, ge=1)
+    llm_timeout_s: float = Field(60, gt=0)
 
     # Embeddings
     embedding_model: str = "BAAI/bge-small-en-v1.5"
