@@ -39,7 +39,7 @@
   - What: JSON log formatter, a `run_id` contextvar, the `stage_timer`/node decorator (§11) and a redaction filter (keys, emails, phones).
   - Done when: tests assert that the timing is recorded, `run_id` appears in the log record, and an email in a log message is redacted.
 
-- [ ] **T-05 Retry utility** · 1 h · Deps: T-01
+- [x] **T-05 Retry utility** · 1 h · Deps: T-01
   - What: `utils/retry.py`, an async retry with exponential backoff + jitter, a retryable predicate and `Retry-After` support.
   - Done when: tests cover success after N failures, immediate raise on a non-retryable error, max attempts, and `Retry-After` honoured (time mocked).
 
@@ -245,6 +245,7 @@
 | 2026-10-31 | T-02 | `tests/test_config.py`: `test_safe_defaults`, `test_empty_store_urls_select_local_backends`, `test_demo_mode_overrides_outreach_and_voice`, `test_env_example_loads_with_safe_defaults`; 42 passed, ruff + mypy clean | pydantic 2.14.2, pydantic-settings 2.16.2 (ADR-016). HLD §10: added `QDRANT_LOCAL_PATH`, `KB_MIN_SCORE` start 0.5, Gmail path defaults, validation rules |
 | 2026-10-31 | T-03 | First push green: https://github.com/lokifergusion9/cpg-partner-agents/actions/runs/41157481472 (lint, format, mypy, pytest) | `.github/workflows/ci.yml` on push to `main` + PRs, `uv sync --locked`. Actions bumped to `checkout@v7` / `setup-uv@v10.1.0` (Node 24) after a Node 20 deprecation warning |
 | 2026-10-31 | T-04 | `tests/test_observability.py`: `test_stage_timer_records_timing_and_logs_it`, `test_timed_node_adds_timing_to_state_update`, `test_run_id_appears_in_log_record`, `test_contacts_are_redacted_at_info`, `test_configured_secrets_are_redacted_at_every_level`; 69 passed, ruff + mypy clean | Added `LOG_LEVEL` (HLD §10). `StageError` capture + `STRICT_NODES` moved into T-06, since `StageError` lives in `schemas.py` |
+| 2026-10-31 | T-05 | `tests/utils/test_retry.py`: `test_succeeds_after_n_transient_failures`, `test_non_retryable_error_raises_immediately`, `test_gives_up_after_max_attempts_and_reraises_last_error`, `test_retry_after_seconds_header_is_honoured`, `test_retry_after_http_date_is_honoured` (sleep + clock injected); 110 passed, ruff + mypy clean | No new deps: errors classified by duck typing (`status_code` / `response.status_code`, timeouts). Retry-After above `max_retry_after_s` (60 s) gives up instead of waiting |
 
 ## Blockers / decisions needed
 
