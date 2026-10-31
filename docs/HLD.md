@@ -144,7 +144,7 @@ class OutreachDraft(BaseModel):
     body: str                              # email body, or the call plan for channel "voice"
     status: Literal["pending_approval", "approved", "rejected", "sent",
                     "drafted_in_gmail", "outboxed", "failed", "skipped_duplicate",
-                    "skipped_ineligible", "skipped_cap"]
+                    "skipped_ineligible", "skipped_cap", "call_created"]   # call_created: voice only
     prompt_version: str
     created_at: datetime
     decided_at: datetime | None = None
@@ -185,6 +185,7 @@ class PlaybookStage(BaseModel):
     goal: str
     rules: list[PlaybookRule]
     slots: list[str] = []                  # qualification only, in asking order
+    required_slots: list[str] = []         # asked even when the partner is in a rush
     fallback_line: str                     # used when a reply fails its checks twice
 
 class CallPlaybook(BaseModel):             # loaded from data/playbooks/<id>.toml
@@ -204,6 +205,8 @@ class TurnSignals(BaseModel):              # classifier output for one partner t
     distressed: bool = False
     resistance: bool = False               # refuses to share / rejects the suggestion
     wants_callback: bool = False
+    in_rush: bool = False                  # ask only the required slots
+    wants_other_category: str | None = None   # acknowledge, offer to pass on, exit politely
     agrees_to_meeting: bool | None = None
     proposed_time: str | None = None       # raw text; parsed by calls/scheduler.py
     question: str | None = None            # a question the partner asked
@@ -467,7 +470,7 @@ The first agent turn (opening) skips `call_classify`. The sub-graph uses its own
 | qualification | every slot filled or confirmed, one per turn, in order | a stop rule fires (territory outside `target_regions`, category excluded, not taking new lines) → `disqualified` |
 | pitch | `agrees_to_meeting` or a positive signal after the pitch | negative after one retry → `not_interested`; `wants_callback` → handoff with a callback |
 | handoff | a specific time parsed and confirmed | "later" / no time after one retry → `callback_booked` if a time exists, else `incomplete` |
-| closing | always → `ended` | — |
+| closing | no open partner question → `ended` (an open question is answered first) | — |
 
 6. `resistance` → `retry_once` if `retries_used[stage] == 0`, otherwise move to the stage's exit path.
 7. `question` → `answer_question` first. The answer may use only approved facts; with no matching fact, the agent offers to have the founder answer it on the meeting.
@@ -492,7 +495,7 @@ The first agent turn (opening) skips `call_classify`. The sub-graph uses its own
 
 Soft rules (empathy, not pushy, answers the actual question) have `check="judge"` and are scored only in the eval (ADR-020), never at run time.
 
-**Modes.** `simulate`: `calls/simulator.py` alternates a persona model (`simulator` role, temp 0.8, persona card from `eval/datasets/personas.jsonl` dev split or the UI picker) with the sub-graph until the call ends or `max_turns`. `live_text`: each `POST /api/calls/{id}/turn` is one partner turn. `live_voice`: the UI records audio, `calls/speech.py` transcribes it, the turn runs as `live_text`, and the reply is synthesised; audio is never stored. `vapi`: stretch.
+**Modes.** `simulate`: `calls/simulator.py` alternates a persona model (`simulator` role, temp 0.8, persona card from `data/personas/` in the UI, or from `eval/datasets/personas.jsonl` in the eval runner) with the sub-graph until the call ends or `max_turns`. `live_text`: each `POST /api/calls/{id}/turn` is one partner turn. `live_voice`: the UI records audio, `calls/speech.py` transcribes it, the turn runs as `live_text`, and the reply is synthesised; audio is never stored. `vapi`: stretch.
 
 **After the call.** `meeting_booked`, `callback_booked` and `escalated_to_human` create a confirmation `OutreachDraft` (email, `pending_approval`) to the lead's verified email when there is one, and record `meeting_at`. Nothing is sent without approval (ADR-012).
 
@@ -605,6 +608,7 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `OLLAMA_TIMEOUT_S` | `60` | added in T-53 |
 | `CALL_PLAYBOOK` | `partner_intro` | added in T-54; file in `data/playbooks/` |
 | `CALL_MAX_TURNS` / `CALL_REPLY_MAX_WORDS` | `30` / `60` | added in T-54 |
+| `CALL_CONTROL` | `stage_machine` | added in T-62; `prompt_only` is the single-prompt baseline for eval ablation A8, never used outside the eval |
 | `SPEECH_ENABLED` | `false` | added in T-61; turns on `live_voice` |
 | `STT_MODEL` / `TTS_VOICE` | `base` / `en_US-lessac-medium` | added in T-61; check the voice's licence |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | |

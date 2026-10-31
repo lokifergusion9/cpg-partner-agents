@@ -68,6 +68,7 @@ The existing alternatives fall short:
 - No real phone calls in v1. The call agent talks to a simulated persona or to the user in the browser. Real calls (Vapi) are a stretch goal, for allowlisted and consenting numbers only.
 - The call agent never negotiates terms, prices or discounts, and never closes a deal. Its job ends at a booked meeting, a booked callback or a polite exit.
 - No content from third-party call scripts. Playbooks are written from scratch for the fictional sample brand.
+- v1 handles the **first** call only. Call history, call types (follow-up, reminder) and previous-call summaries are out of scope (a second playbook is stretch T-64).
 
 ## 6. Features and acceptance criteria
 
@@ -106,7 +107,7 @@ The existing alternatives fall short:
 - A daily cap applies per user.
 
 **F8. Call agent (Chase)**
-- **Trigger.** "Call lead 1" (or "call the top one") routes to outreach with `channel=voice`. The call needs a lead with a verified phone and goes through the same approval gate as email: the user approves the call plan before it starts.
+- **Trigger.** "Call lead 1" (or "call the top one") routes to outreach with `channel=voice`. It goes through the same approval gate as email: the user approves the call plan before it starts. In v1 no number is dialled, so any lead can be called; a verified phone is required only for real calls (Vapi, stretch).
 - **Playbook.** The call runs six stages in a fixed order: opening → discovery → qualification → pitch → handoff (scheduling) → closing. Stage goals and must / never rules come from a playbook file (`data/playbooks/partner_intro.toml`). The stage order, stop rules and outcomes are enforced in code, not by the prompt.
 - **Opening.** The agent says it is an AI assistant calling on behalf of the brand, confirms it is speaking to the right person and asks whether now is a good time. If not, it offers a callback.
 - **Discovery.** Learns whether the partner is taking on new lines in the category, and why or why not.
@@ -114,7 +115,7 @@ The existing alternatives fall short:
 - **Pitch.** Uses two or three approved facts from the brand profile and knowledge base that fit what the partner said. It never invents numbers, never makes guarantees and never offers discounts.
 - **Handoff.** Offers a meeting with the brand founder and gets a specific day and time (the default proposal is the next business day, at least 24 hours out, on the hour). "Later" is not a commitment.
 - **Closing.** Summarises in two sentences, asks for any last questions and signs off with the brand's sign-off line.
-- **Guardrails, every stage.** Honours an opt-out immediately. Retries at most once after resistance. Acknowledges distress before continuing. Books a human (the founder) if asked. Answers "are you a bot?" truthfully. Never repeats data the partner did not share on the call.
+- **Guardrails, every stage.** Honours an opt-out immediately. Retries at most once after resistance, and never re-suggests something already declined. Acknowledges distress before continuing. Books a human (the founder) if asked. Answers "are you a bot?" truthfully. Never repeats data the partner did not share on the call. If the partner is in a rush, it asks only the required qualification slots. If the partner wants a different category, it acknowledges that, offers to pass it on to the founder and exits politely. It never signs off while the partner's question is still open.
 - **Outcomes.** Each call ends in exactly one of: `meeting_booked`, `callback_booked`, `not_interested`, `disqualified`, `opted_out`, `wrong_person`, `escalated_to_human`, `incomplete`.
 - **After the call.** A `CallRecord` holds the transcript with stage labels, the slots collected, the outcome and every rule check. A meeting or callback creates a confirmation email draft that goes through approval like any other draft.
 - **Modes.** `simulate` (an LLM plays a chosen partner persona), `live_text` (the user types as the partner) and `live_voice` (the user speaks; speech-to-text and text-to-speech run locally; nice-to-have). `vapi` is a stretch goal.
@@ -172,7 +173,7 @@ v1 ships when all of the following hold (definitions in EVAL §4, targets in EVA
 5. Ask "Draft emails to the top 3 for our gluten-free cookie brand" → three drafts, pending approval.
 6. Edit one, reject one, approve one → the approved message appears in the outbox and the rejected one does not.
 7. Ask "Call the first lead" → the call plan appears for approval. Approve it.
-8. In the Call tab, pick the persona "busy broker, interested" and press Simulate → the transcript appears with each stage labelled, the rule checks per turn and the outcome `meeting_booked`, plus a confirmation email draft pending approval.
+8. In the Call tab, pick the persona "interested broker" and press Simulate → the transcript appears with each stage labelled, the rule checks per turn and the outcome `meeting_booked`, plus a confirmation email draft pending approval.
 9. Switch to live text and play the partner yourself. Say "stop calling me" → the agent apologises and ends the call, and the outcome is `opted_out`.
 10. Open the Runs tab → stage timings, token counts and the trace link.
 

@@ -46,7 +46,7 @@ Common flags: `--provider gemini|groq|ollama|fake`, `--roles simulator=ollama:<m
 
 Distribution per split: discovery 35%, cpg_qa 25%, outreach 15%, clarify 15%, out_of_scope 10%. Include hard cases: typos, Hinglish phrasing ("California me cookie brokers dhundo"), CPG-adjacent but out-of-scope requests ("write my brand's Instagram caption"), and discovery requests missing a slot (expected `clarify`).
 
-Outreach items include `"context_leads": true`. The runner seeds a fake prior run so that selection has something to resolve.
+Outreach items include `"context_leads": true`. The runner seeds a fake prior run so that selection has something to resolve. About a third of the outreach items are call requests ("call the first one", "ring the LA broker") with gold `outreach_channel: "voice"`; channel accuracy is part of slot accuracy for outreach items.
 
 ### 3.2 Extraction (`extraction.jsonl`), 30 pages
 
@@ -254,7 +254,7 @@ Bold = current default.
 | E2E median yield | ≥ 5 | — | 10 |
 | Call outcome accuracy | ≥ 0.85 | — | 20 |
 | Call hard-rule violation rate / regenerate rate | = 0 / (report) | — | — |
-| Opt-out compliance | = 1.0 | — | 4 |
+| Opt-out compliance | = 1.0 | — | 2 |
 | Booking precision | ≥ 0.95 | — | — |
 | Unsupported-claim rate (judge, agreement —) | ≤ 0.02 | — | — |
 | Call p50 / p95 per turn | — / ≤ 5 s | — | — |

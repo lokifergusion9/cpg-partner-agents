@@ -154,8 +154,8 @@ M1 also gains T-53 (LLM cache, per-role providers, fallback chain: 2 h).
   - Done when: offline tests show the outbox statuses, `gmail_send` refusing non-allowlisted recipients, and demo mode forcing the outbox. Manually, one approved draft appears in your own Gmail Drafts (Progress log note).
 
 - [ ] **T-26 Voice interface + mock** · 1 h · Deps: T-22
-  - What: the `outreach/voice.py` protocol, the `call_plan` node (voice `OutreachDraft` with the call plan as its body) and a `MockVoiceCaller` stub that creates a `CallRecord` placeholder. The real call engine plugs in at T-58.
-  - Done when: a test shows a voice draft created for "call lead 1", the stub `CallRecord` stored after approval, and a non-allowlisted number refused even when `VOICE_PROVIDER=vapi`.
+  - What: the `outreach/voice.py` protocol, the `call_plan` node (voice `OutreachDraft` with the call plan as its body) and a `MockVoiceCaller` stub that marks the approved voice draft `call_created` without starting anything. T-58 makes it create and run a real `CallRecord` (the schema arrives in T-54).
+  - Done when: a test shows a voice draft created for "call lead 1", its status `call_created` after approval, and a non-allowlisted number refused even when `VOICE_PROVIDER=vapi`.
 
 ## M5: API, UI, storage → MVP
 
@@ -189,7 +189,7 @@ M1 also gains T-53 (LLM cache, per-role providers, fallback chain: 2 h).
 
 - [ ] **T-55 Stage machine** · 2.5 h · Deps: T-54
   - What: `calls/stages.advance(progress, signals, playbook, brand) -> (CallProgress, Directive)`, a pure function implementing the §6.11 priority list and stage table, plus fact selection.
-  - Done when: table-driven tests cover every row of the stage table, opt-out overriding everything in every stage, `asks_if_ai` → `disclose_ai`, retry-once (a second resistance exits), each stop rule → `disqualified`, an already-shared slot confirmed instead of re-asked, and `max_turns` → `incomplete`.
+  - Done when: table-driven tests cover every row of the stage table, opt-out overriding everything in every stage, `asks_if_ai` → `disclose_ai`, retry-once (a second resistance exits), each stop rule → `disqualified`, an already-shared slot confirmed instead of re-asked, `in_rush` skipping optional slots, `wants_other_category` → polite exit, closing waiting on an open question, and `max_turns` → `incomplete`.
 
 - [ ] **T-56 Scheduler** · 1 h · Deps: T-54
   - What: `calls/scheduler.py`: propose the next business day ≥ 24 h ahead on the hour inside 10:00–17:00 brand time; parse "tomorrow 3pm", "Thursday at 11", "next Monday morning"; reject "later" / "sometime".
