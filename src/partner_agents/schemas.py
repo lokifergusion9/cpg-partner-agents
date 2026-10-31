@@ -4,10 +4,9 @@ The call-agent models of HLD §4.1 arrive with T-54. This module imports nothing
 rest of the package, so every layer can depend on it.
 """
 
-from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, HttpUrl, computed_field
+from pydantic import AwareDatetime, BaseModel, EmailStr, Field, HttpUrl, computed_field
 
 PartnerType = Literal["retailer", "distributor", "broker", "manufacturer", "other"]
 Intent = Literal["cpg_qa", "discovery", "outreach", "clarify", "out_of_scope"]
@@ -61,6 +60,14 @@ class PageRef(BaseModel):  # state holds refs; page text lives in the repo (§8)
     contact_page_url: HttpUrl | None = None
 
 
+class PageRecord(BaseModel):  # the `pages` collection (§8.1); TTL runs from fetched_at
+    run_id: str
+    url: str
+    text: str
+    contact_text: str = ""  # footer / contact-element text and mailto:/tel: targets
+    fetched_at: AwareDatetime
+
+
 class RetrievedChunk(BaseModel):
     chunk_id: str
     url: HttpUrl
@@ -98,7 +105,7 @@ class Lead(BaseModel):
     phone_status: VerificationStatus
     source_url: HttpUrl
     evidence_quote: str
-    created_at: datetime
+    created_at: AwareDatetime
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -156,8 +163,8 @@ class OutreachDraft(BaseModel):
         "call_created",  # voice only
     ]
     prompt_version: str
-    created_at: datetime
-    decided_at: datetime | None = None
+    created_at: AwareDatetime
+    decided_at: AwareDatetime | None = None
 
 
 class ApprovalDecision(BaseModel):
@@ -178,8 +185,8 @@ class RunRecord(BaseModel):
     user_id: str
     thread_id: str
     intent: Intent
-    started_at: datetime
-    finished_at: datetime | None
+    started_at: AwareDatetime
+    finished_at: AwareDatetime | None
     timings_ms: dict[str, int]
     tokens: dict[str, int]  # per role
     prompt_versions: dict[str, str]

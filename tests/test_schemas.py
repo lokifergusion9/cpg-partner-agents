@@ -202,6 +202,19 @@ def test_brand_profile_carries_approved_facts() -> None:
     assert brand.approved_facts[0].tags == []
 
 
+# --- timestamps ---------------------------------------------------------------------
+
+
+def test_timestamps_must_be_timezone_aware() -> None:
+    naive = datetime(2026, 11, 1, 9, 30)
+    with pytest.raises(ValidationError):
+        make_lead(created_at=naive)
+    with pytest.raises(ValidationError):
+        make_draft(created_at=naive)
+    with pytest.raises(ValidationError):
+        make_run_record(started_at=naive)
+
+
 # --- defaults are not shared between instances --------------------------------------
 
 

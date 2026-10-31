@@ -82,6 +82,11 @@ class PageRef(BaseModel):                  # state holds refs; page text lives i
     injection_score: float = 0.0
     contact_page_url: HttpUrl | None = None
 
+class PageRecord(BaseModel):               # the `pages` collection (§8.1); TTL runs from fetched_at
+    run_id: str; url: str; text: str
+    contact_text: str = ""                 # footer / contact-element text and mailto:/tel: targets
+    fetched_at: AwareDatetime
+
 class RetrievedChunk(BaseModel):
     chunk_id: str; url: HttpUrl; chunk_index: int; text: str
     score: float; selected_by: Literal["vector", "contact_pattern"]
@@ -110,7 +115,7 @@ class Lead(BaseModel):
     phone_status: VerificationStatus
     source_url: HttpUrl
     evidence_quote: str
-    created_at: datetime
+    created_at: AwareDatetime
 
     @computed_field
     def outreach_eligible(self) -> bool:
@@ -146,8 +151,8 @@ class OutreachDraft(BaseModel):
                     "drafted_in_gmail", "outboxed", "failed", "skipped_duplicate",
                     "skipped_ineligible", "skipped_cap", "call_created"]   # call_created: voice only
     prompt_version: str
-    created_at: datetime
-    decided_at: datetime | None = None
+    created_at: AwareDatetime
+    decided_at: AwareDatetime | None = None
 
 class ApprovalDecision(BaseModel):
     approve: list[str] = []                # draft ids
@@ -159,7 +164,7 @@ class StageError(BaseModel):
 
 class RunRecord(BaseModel):
     run_id: str; user_id: str; thread_id: str; intent: Intent
-    started_at: datetime; finished_at: datetime | None
+    started_at: AwareDatetime; finished_at: AwareDatetime | None
     timings_ms: dict[str, int]; tokens: dict[str, int]      # per role
     prompt_versions: dict[str, str]; errors: list[StageError]
     trace_url: str | None = None
@@ -248,7 +253,7 @@ class CallRecord(BaseModel):
     turns: list[CallTurn]
     meeting_at: datetime | None = None
     followup_draft_id: str | None = None   # confirmation email, pending approval
-    started_at: datetime; finished_at: datetime | None = None
+    started_at: AwareDatetime; finished_at: AwareDatetime | None = None
     tokens: dict[str, int]; providers: dict[str, str]
 ```
 
@@ -561,7 +566,20 @@ All routes are under `/api`. JSON in and out. If `APP_API_KEY` is set, the `X-AP
 | `calls` | `CallRecord` | `{user_id, started_at}`, `{lead_id}`, TTL on `started_at` = `DATA_TTL_DAYS` for `simulate` mode only |
 | `checkpoints*` | LangGraph MongoDB saver | managed by the library |
 
-All access goes through the `Repository` protocol (`storage/repo.py`). There are two implementations: `InMemoryRepository` and `MongoRepository`. Both are covered by the same test suite.
+All access goes through the `Repository` protocol (`storage/repo.py`). There are two implementations: `InMemoryRepository` and `MongoRepository`. Both are covered by the same test suite (`tests/storage/repo_contract.py`).
+
+All methods are `async`. Reads are scoped by `user_id` where the data is per-user (a lead or draft of another user is `None`). Saving an existing id replaces the document.
+
+| Group | Methods |
+|---|---|
+| leads | `save_leads(leads)`, `get_lead(user_id, lead_id)`, `list_leads(user_id, run_id=None)` (oldest first, ties in save order) |
+| outreach | `save_draft(draft)`, `get_draft(user_id, draft_id)`, `list_drafts(user_id, status=None)`, `recent_drafts_to(user_id, recipient, since)` (case-insensitive recipient; the 30-day dedupe query) |
+| runs | `save_run(run)`, `get_run(run_id)`, `list_runs(user_id, limit=20)` (newest first) |
+| pages | `save_page(PageRecord)`, `get_page(run_id, url)`: `None` once `fetched_at + DATA_TTL_DAYS` has passed |
+| search cache | `get_cached_search(query_key)` (`None` when missing or older than 24 h, `[]` is a valid cached result), `put_cached_search(query_key, hits)` (restarts the TTL) |
+| profiles | `save_profile(user_id, profile)`, `get_profile(user_id)` |
+
+Expiry is decided at read time against an injectable clock, because a Mongo TTL index only sweeps about once a minute. The `calls` group arrives with T-58. All stored timestamps are timezone-aware.
 
 ### 8.2 Qdrant (Cloud free tier; local mode when `QDRANT_URL` is empty)
 
