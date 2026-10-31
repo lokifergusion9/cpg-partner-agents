@@ -17,6 +17,9 @@ from email.utils import parsedate_to_datetime
 logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_TRANSPORT_ERROR_NAMES = frozenset(
+    {"TimeoutException", "ConnectError", "ReadError", "RemoteProtocolError"}
+)
 
 # Indirection so tests can mock "now" for HTTP-date Retry-After values.
 _now: Callable[[], datetime] = lambda: datetime.now(UTC)  # noqa: E731
@@ -61,13 +64,9 @@ def is_retryable(exc: BaseException) -> bool:
     """Default predicate: transient network failures and retryable HTTP statuses."""
     if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
-    # httpx and SDK transport errors that are not subclasses of the builtins above.
-    if type(exc).__name__ in {
-        "TimeoutException",
-        "ConnectError",
-        "ReadError",
-        "RemoteProtocolError",
-    }:
+    # httpx and SDK transport errors that are not subclasses of the builtins above. Matched
+    # by class name anywhere in the MRO, so ``httpx.ReadTimeout`` counts as a TimeoutException.
+    if any(cls.__name__ in _TRANSPORT_ERROR_NAMES for cls in type(exc).__mro__):
         return True
     code = status_code_of(exc)
     return code is not None and code in RETRYABLE_STATUS

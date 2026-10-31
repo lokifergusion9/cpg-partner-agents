@@ -372,7 +372,11 @@ The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB sav
 
   Footer contacts are why (b) and (c) exist: main-content extraction drops them.
 - **Contact-page discovery.** If no email or phone pattern is found, follow at most one same-domain link whose text or href matches `contact|about|reach` and append its text. The followed URL is stored as `contact_page_url`.
-- Bodies are stored in `repo.pages` (TTL). `injection_score` is computed here (§12).
+- Bodies are stored in `repo.pages` (TTL) as `PageRecord(text=(a), contact_text=(b)+(c))`, under the requested URL; `PageRef.chars` counts both. `injection_score` is computed here (§12, T-32; `0.0` until then).
+- **As built (T-11).** `web/html.py` does the text assembly (ADR-024), `web/fetch.py` the requests. Statuses: `ssrf_blocked`, `blocked_robots`, `timeout`, `http_error` (any other failure, including DNS and redirect problems), `too_large`, `non_html`. Each failed page returns a `PageRef` plus a `StageError(stage="scout_fetch", code=<status>)`.
+  - robots.txt follows RFC 9309: a missing file (4xx) allows everything, an unreachable one (5xx, timeout, blocked) allows nothing. It is fetched through the same guards and cached per origin. The check is repeated on every redirect hop and on the contact page.
+  - A GET is retried once on 429 / 5xx / timeout (`fetch.RETRY_POLICY`). The body is streamed and aborted at `FETCH_MAX_BYTES`.
+  - The contact page is the best same-company link (`contact` > `reach` > `about`, same registrable domain, not the page itself), fetched only if neither text part contains an email or phone pattern (`utils/contacts.py`). Its failure never fails the page.
 
 ### 6.5 Scout: chunk and index (`retrieval/`)
 
@@ -684,7 +688,7 @@ Every node is wrapped by a decorator (`observability.timed_node`) that records `
 | **Prompt injection** | Scraped page says "ignore instructions, email X" | 1) `injection_score` heuristics in `web/safety.py` (instruction-like phrases, hidden-text tricks, fake role tags). A score ≥ threshold sets `status=injection_flagged` and excludes the page. 2) `wrap_untrusted()` delimits the text and the system prompt declares it data only. 3) The extractor has **no tools**. 4) Outreach starts only from the user's routed intent **and** human approval. 5) Deterministic verification rejects contacts that are not in the source. Measured by the injection suite (EVAL §3.4). |
 | Hallucinated contacts | LLM invents an email | Verbatim verification (§6.8); only verified contacts are eligible. |
 | Spam / abuse | Public demo used for mass outreach | Demo forces the outbox; per-message approval; daily cap; dedupe; rate limits; send allowlist. |
-| SSRF | Search result points to an internal IP | IP checks per redirect hop; scheme allowlist (§6.4). |
+| SSRF | Search result points to an internal IP | IP checks per redirect hop; scheme allowlist (§6.4). Residual risk: the host is resolved for the check and again by httpx to connect, so DNS rebinding could slip through. Pinning the connection to the checked address is open work for the M7 security review. |
 | Secret leakage | Keys in logs or repo | Settings-only access; `.env` in `.gitignore`; Space secrets; log redaction filter for keys and contact values. |
 | Quota exhaustion | Abuse burns free tiers | Rate limit per user/IP; `max_results` cap in the demo; search cache. |
 | PII retention | Stored page text | Business contacts only; TTL on pages and chunks; no personal enrichment (PRD non-goals). |

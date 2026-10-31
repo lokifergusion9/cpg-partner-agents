@@ -60,6 +60,8 @@ src/partner_agents/
   ui/              app.py (Gradio, mounted at /ui)
   observability.py logging, run context, stage timer, tracing
   utils/retry.py   async retry with backoff + jitter
+  utils/contacts.py  email / phone detection patterns (detect only; verify/ decides)
+  web/html.py      page text assembly (main text, contact text, contact link)
   cli.py
 eval/              datasets/, run.py, metrics.py, results/
 data/kb/           CPG knowledge-base notes (public sources, cited)

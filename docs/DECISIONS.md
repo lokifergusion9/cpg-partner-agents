@@ -247,6 +247,16 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
 
+## ADR-024: trafilatura and lxml for page text
+- **Status:** Accepted · 2026-11-01
+- **Context:** Scout needs readable text from arbitrary company sites (HLD §6.4). Main-content extraction is a hard problem on its own, but it throws away footers, which is where contact details live, so a second extraction path is needed.
+- **Decision:** `trafilatura` for the main content (the CLAUDE.md stack choice) and `lxml` (already a dependency of both trafilatura and ddgs) for the footer / `<address>` / "contact" elements, `mailto:` / `tel:` targets and contact-page links. Robots rules use the standard-library `urllib.robotparser`. `lxml` ships no type stubs, so mypy has one `ignore_missing_imports` override for it (ADR-015).
+- **Alternatives:**
+  - BeautifulSoup + hand-written boilerplate removal: more code for worse main-content extraction.
+  - `readability-lxml` / `newspaper3k`: less actively maintained, no better on footers.
+  - `lxml-stubs`: another dependency to track for one module.
+- **Consequences:** trafilatura is synchronous and CPU-bound, so it runs in a worker thread. Its heuristics can drop short pages; the fetcher falls back to the body text.
+
 ## ADR-023: tldextract for registrable-domain de-duplication
 - **Status:** Accepted · 2026-11-01
 - **Context:** Scout keeps one hit per company (HLD §6.3): `www.acme.com`, `shop.acme.com` and `shop.acme.co.uk` must collapse to `acme.com` / `acme.co.uk`. That needs the Public Suffix List; "take the last two labels" is wrong for `co.uk`, `com.au`, `co.in`.

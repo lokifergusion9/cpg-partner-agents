@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28.1",
     "ddgs>=9.16.1",
     "tldextract>=5.4.0",
+    "trafilatura>=2.3.1",
 ]
 
 [dependency-groups]
@@ -61,6 +62,11 @@ mypy_path = "src"
 packages = ["partner_agents"]
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
+
+# lxml ships no type information (ADR-015: one override per untyped library, with a reason).
+[[tool.mypy.overrides]]
+module = ["lxml", "lxml.*"]
+ignore_missing_imports = true
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

@@ -212,6 +212,9 @@ def test_parse_retry_after(
         (SDKError(403), False),
         (ValueError(), False),
         (type("TimeoutException", (Exception,), {})(), True),  # httpx-shaped
+        (type("ReadTimeout", (type("TimeoutException", (Exception,), {}),), {})(), True),
+        (type("ConnectTimeout", (type("TimeoutException", (Exception,), {}),), {})(), True),
+        (type("ProtocolError", (Exception,), {})(), False),
     ],
 )
 def test_is_retryable(error: Exception, expected: bool) -> None:
