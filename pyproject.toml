@@ -1,0 +1,59 @@
+[project]
+name = "partner-agents"
+version = "0.0.1"
+description = "LangGraph multi-agent system that finds CPG partners, verifies their contacts and drafts human-approved outreach."
+readme = "CLAUDE.md"
+authors = [{ name = "Lokesh Kumar" }]
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "partner_agents"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.format]
+# Docs are the contract (CLAUDE.md); their code blocks are kept exactly as written.
+exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # bugbear
+    "SIM",   # simplify
+    "ASYNC", # async pitfalls
+    "RUF",   # ruff-specific
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["partner_agents"]
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Offline by default (CLAUDE.md rule 4). `pytest -m live` overrides this.
+addopts = ["-ra", "--strict-markers", "-m", "not live"]
+markers = [
+    "live: calls real external APIs; needs a .env (deselected by default)",
+]

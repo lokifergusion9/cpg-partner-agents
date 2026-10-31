@@ -156,3 +156,14 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - Live-only eval: not reproducible.
   - Committing third-party HTML: copyright and privacy concerns.
 - **Consequences:** Reruns are deterministic except for model nondeterminism at temp 0. Others cannot fully reproduce the eval without re-snapshotting, which is acknowledged in the README.
+
+## ADR-015: Project tooling (uv, uv_build, pytest, ruff, mypy)
+- **Status:** Accepted · 2026-10-31
+- **Context:** T-01 needs a package manager, a build backend and the quality gates that CLAUDE.md requires before every commit (ruff, mypy, pytest).
+- **Decision:** uv manages Python 3.12 and the lockfile (`uv.lock`, committed). `uv_build` is the build backend for the `src/` layout. Dev-only group: pytest, ruff (lint + format), mypy in `strict` mode. pytest deselects `live` tests by default (`-m "not live"`), so `uv run pytest` is always offline; `pytest -m live` overrides it. `ruff format` skips `*.md`, because ruff also formats code blocks inside Markdown and the HLD's schema listings are kept exactly as written. Test-only helpers (respx, pytest-asyncio) are added in the task that first needs them.
+- **Alternatives:**
+  - Poetry / pip-tools: slower, and uv is already the stated stack.
+  - hatchling: works, but `uv_build` needs no extra config for a plain `src/` package.
+  - black + isort + flake8: three tools where ruff is one.
+  - mypy non-strict: lets untyped code in, against "full type hints" in CLAUDE.md.
+- **Consequences:** One tool installs, locks and runs everything. Strict mypy means third-party libraries without stubs need explicit `ignore_missing_imports` overrides, added per library with a comment.

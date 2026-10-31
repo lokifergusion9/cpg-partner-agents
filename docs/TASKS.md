@@ -23,7 +23,7 @@
 
 ## M0: Foundation
 
-- [ ] **T-01 Repo scaffold** · 1.5 h · Deps: —
+- [x] **T-01 Repo scaffold** · 1.5 h · Deps: —
   - What: uv project (`pyproject.toml`, Python 3.12), `src/partner_agents/` package skeleton per CLAUDE.md layout, ruff + mypy + pytest config (`live` marker registered), `.gitignore` (`.env`, `.qdrant/`, `eval/fixtures/pages/`, `eval/.cache/`, tokens).
   - Done when: `uv sync && uv run pytest` passes with one smoke test, and `uv run ruff check .` and `uv run mypy src` are clean.
 
@@ -241,7 +241,7 @@
 
 | Date | Task | Evidence | Notes |
 |---|---|---|---|
-| | | | |
+| 2026-10-31 | T-01 | `uv sync && uv run pytest` → 12 passed (`tests/test_smoke.py`); `ruff check .` clean; `mypy src` → no issues in 12 files | uv 0.12.5, CPython 3.12.14, pytest 9.2.0, ruff 0.17.3, mypy 2.4.1. ADR-015 records tooling; `ruff format` excludes `*.md` |
 
 ## Blockers / decisions needed
 
