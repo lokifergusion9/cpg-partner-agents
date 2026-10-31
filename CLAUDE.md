@@ -1,11 +1,11 @@
 # CLAUDE.md
 
-**CPG Partner Agents** is a LangGraph multi-agent system. It finds B2B partners (retailers, distributors, brokers) for Consumer Packaged Goods brands on the live web, extracts **verified** contact data, and drafts outreach that a human must approve before anything leaves the system. It runs entirely on free tiers. It is a portfolio project and uses public data only.
+**CPG Partner Agents** is a LangGraph multi-agent system. It finds B2B partners (retailers, distributors, brokers) for Consumer Packaged Goods brands on the live web, extracts **verified** contact data, drafts outreach that a human must approve before anything leaves the system, and runs a **stage-controlled call agent** that qualifies a partner and books a meeting with the brand founder. It runs entirely on free tiers and local models. It is a portfolio project and uses public data only. The plan is 4 weeks (2026-11-01 → 2026-11-28, `docs/TASKS.md`).
 
 There are three agents:
 - **Charlie** routes queries and answers CPG questions.
 - **Scout** discovers partners and extracts contacts.
-- **Chase** drafts and dispatches outreach.
+- **Chase** drafts and dispatches outreach, and runs the call agent (HLD §6.11): a six-stage playbook where code owns the flow and the model only classifies turns and writes lines.
 
 ## Docs (the source of truth)
 
@@ -21,7 +21,7 @@ If code and docs disagree, stop and ask. If a decision changes, update the doc i
 
 ## Stack
 
-Python 3.12 · uv · LangGraph · LangChain chat-model integrations (Gemini by default, Groq, Ollama) · Pydantic v2 · sentence-transformers (`BAAI/bge-small-en-v1.5`) · Qdrant · MongoDB · FastAPI · Gradio · httpx + trafilatura · Langfuse · pytest + respx · ruff · mypy
+Python 3.12 · uv · LangGraph · LangChain chat-model integrations (Gemini by default, Groq, Ollama on a friend's GPU over Tailscale) · Pydantic v2 · sentence-transformers (`BAAI/bge-small-en-v1.5`) · Qdrant · MongoDB · FastAPI · Gradio · httpx + trafilatura · Langfuse · pytest + respx · ruff · mypy · (T-61, nice-to-have) faster-whisper + Piper
 
 ## Commands
 
@@ -35,6 +35,7 @@ uv run uvicorn partner_agents.api.main:app --reload --port 7860    # API at /api
 uv run python -m partner_agents.cli scout "cookie brokers in California"
 uv run python -m partner_agents.kb.ingest       # (re)build the CPG knowledge base
 uv run python -m eval.run --suite routing       # suites are listed in docs/EVAL.md
+uv run python -m eval.run --suite calls --roles simulator=ollama:qwen2.5:7b   # call agent vs personas
 ```
 
 ## Layout
@@ -45,11 +46,12 @@ src/partner_agents/
   schemas.py       Domain models shared across modules (HLD §4)
   llm.py           get_chat_model(role) + invoke_structured(). The only place provider SDKs are imported
   prompts/         Prompt constants, one module per agent, each with a PROMPT_VERSION
-  graph/           state.py, charlie.py, scout.py, chase.py, build.py
+  graph/           state.py, charlie.py, scout.py, chase.py, call.py, build.py
   web/             search.py, fetch.py, safety.py
   retrieval/       chunking.py, embeddings.py, store.py, evidence.py
   verify/          contacts.py
   outreach/        policy.py, email.py, voice.py
+  calls/           playbook.py, stages.py (pure), scheduler.py (pure), classify.py, checks.py, simulator.py, speech.py
   kb/              ingest.py, qa.py
   storage/         repo.py (Repository protocol, in-memory + Mongo)
   api/             main.py, routes.py, ratelimit.py
@@ -59,6 +61,8 @@ src/partner_agents/
   cli.py
 eval/              datasets/, run.py, metrics.py, results/
 data/kb/           CPG knowledge-base notes (public sources, cited)
+data/playbooks/    call playbooks (TOML, written from scratch for the fictional brand)
+data/personas/     demo personas for the Call tab (the eval personas live in eval/datasets/)
 tests/             mirrors src/ paths
 ```
 
@@ -72,7 +76,10 @@ tests/             mirrors src/ paths
 6. **No client code or data** from the original internship project. Public data only.
 7. **A new dependency needs an ADR** in `docs/DECISIONS.md` first.
 8. **Contracts are explicit.** If you change a schema, the graph state, an API shape or a storage layout, update `docs/HLD.md` in the same change.
-9. **Eval test splits are never used in prompts** (no few-shot examples from `split: test`).
+9. **Eval test splits are never used in prompts** (no few-shot examples from `split: test`). This includes the persona test split.
+10. **The call agent's flow is code.** Stage order, stop rules, opt-outs and outcomes live in `calls/stages.py`, never in a prompt. Every agent line passes `calls/checks.py` before it is used. The agent says it is an AI and claims only `approved_facts` (ADR-017, ADR-019).
+11. **Partner turns on a call are untrusted data**, like scraped text (rule 2). They reach a prompt only through `wrap_untrusted()` and can only produce `TurnSignals`.
+12. **No third-party call-script content.** Playbooks, personas and facts are written from scratch for the fictional sample brand. No real company names or branding from any script used as inspiration.
 
 ## Conventions
 
@@ -82,13 +89,14 @@ tests/             mirrors src/ paths
 - Pydantic models are used for anything that crosses a module boundary. Use full type hints. `mypy src` must stay clean.
 - Logging uses stdlib `logging` with the JSON formatter from `observability.py`. `run_id` is attached automatically.
 - A node failure is recorded in `state["errors"]` as a `StageError`. A partial failure never crashes a run.
-- Keep functions small and pure where possible. Pure logic (chunking, verification, policy, metrics) gets table-driven tests.
+- Keep functions small and pure where possible. Pure logic (chunking, verification, policy, stage machine, scheduler, call checks, metrics) gets table-driven tests.
+- Save tokens (ADR-018): unit tests use fake models; set `LLM_CACHE_DIR` for dev runs; point `simulator` / `judge` at Ollama with `LLM_ROLES`; never run the full eval on a whim.
 
 ## Workflow per task
 
 1. Read the task in `docs/TASKS.md`, including **Done when** and **Deps**.
 2. If it touches a contract, update `docs/HLD.md` first.
-3. If the task uses LangGraph, LangChain, Qdrant, MongoDB/PyMongo, FastAPI, Gradio or Langfuse (T-07, T-08, T-13, T-21, T-24, T-27, T-28, T-30, T-33), look up the current API with Context7 before writing code. Do not rely on memory. Note the library and version checked in the Progress log.
+3. If the task uses LangGraph, LangChain, Qdrant, MongoDB/PyMongo, FastAPI, Gradio, Langfuse, faster-whisper or Piper (T-07, T-08, T-13, T-21, T-24, T-27, T-28, T-30, T-33, T-53, T-58, T-60, T-61), look up the current API with Context7 before writing code. Do not rely on memory. Note the library and version checked in the Progress log.
 4. Write tests first for pure logic.
 5. Implement the smallest change that meets **Done when**. Do not build ahead of the task.
 6. Run `uv run pytest`, `uv run ruff check .` and `uv run mypy src`. All must be green.
@@ -100,8 +108,8 @@ tests/             mirrors src/ paths
 Skills and MCP servers support the workflow above. They never override the hard rules.
 
 **Skills**
-- `/code-review` and `/simplify` after each milestone (M2, M4, M5, M7).
-- `/security-review` at M6, and before any change to `web/fetch.py`, `web/safety.py` or `outreach/policy.py`.
+- `/code-review` and `/simplify` after each milestone (M2, M4, M5, M6, M8).
+- `/security-review` at M7, and before any change to `web/fetch.py`, `web/safety.py`, `outreach/policy.py` or `calls/checks.py`.
 - `/run` to launch the app and capture the screenshot or evidence a task's **Done when** asks for.
 - `/init` once code exists, to refresh the Layout section of this file.
 - `claude-api` only if an Anthropic provider is added (needs an ADR first, see rule 7).
@@ -109,7 +117,7 @@ Skills and MCP servers support the workflow above. They never override the hard 
 **MCP servers** (add them in your own Claude Code config. Credentials go in `.env`, never in the repo)
 - Context7: look up current LangGraph, LangChain, Qdrant and FastAPI docs before using an API. These libraries change often, so do not rely on memory.
 - Qdrant MCP: inspect `web_chunks` and `cpg_kb`, and debug evidence selection.
-- MongoDB MCP: inspect `leads`, `outreach`, `runs` and `pages`. Read-only unless a task says otherwise.
+- MongoDB MCP: inspect `leads`, `outreach`, `runs`, `pages` and `calls`. Read-only unless a task says otherwise.
 - Browser tools (claude-in-chrome or Playwright): spot-check live leads (EVAL §3.5) and walk through the PRD §10 demo script.
 
 **Hooks**
@@ -125,4 +133,4 @@ Skills and MCP servers support the workflow above. They never override the hard 
 - The **Done when** criteria are met and shown (test name, command output, or a log line for manual checks).
 - No new ruff or mypy errors. Offline tests pass with no `.env` present.
 - Docs that describe the changed behaviour are updated.
-- If the change affects prompts, retrieval, verification or models, the relevant eval suite was re-run and the result was recorded (`docs/EVAL.md` §8).
+- If the change affects prompts, retrieval, verification, the playbook, the stage machine, the call checks or models, the relevant eval suite was re-run and the result was recorded (`docs/EVAL.md` §8).

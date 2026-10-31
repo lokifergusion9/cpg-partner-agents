@@ -140,7 +140,7 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
 - **Consequences:** It is slower than full automation by design. The approval record satisfies PRD G3.
 
 ## ADR-013: Voice calls mocked by default
-- **Status:** Accepted · 2026-10-30
+- **Status:** Superseded by ADR-017 · 2026-10-31 (the mock-by-default and Vapi-allowlist decisions carry over; the "not core" context does not)
 - **Context:** Real AI voice calls cost money after trial credits and carry consent and telemarketing obligations. They are not core to the portfolio story.
 - **Decision:** A `VoiceCaller` protocol with `MockVoiceCaller` as the default. `VapiVoiceCaller` is a stretch task, limited to allowlisted, consenting numbers.
 - **Alternatives:**
@@ -176,3 +176,61 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `os.environ` + hand-written parsing: no validation or typing, easy to read env vars from anywhere.
   - dynaconf / environs: another config model next to the Pydantic models used everywhere else.
 - **Consequences:** Invalid config fails at startup with a clear message instead of misbehaving at run time. Every new variable must be added to `Settings`, `.env.example` and HLD §10; `test_env_example_lists_every_setting` catches a missing `.env.example` entry.
+
+## ADR-017: Stage-controlled call agent driven by a playbook file
+- **Status:** Accepted · 2026-10-31 · supersedes ADR-013
+- **Context:** A text email table is a weak demo, and "an LLM that follows a sales script" is the hard, hireable problem: a free-running prompt drifts, skips steps, invents numbers and ignores opt-outs. We want Chase to run a first partner-discovery call that books a meeting with the brand founder, while staying as controllable and measurable as the rest of the system.
+- **Decision:**
+  - The call is a **LangGraph sub-graph** (HLD §6.11). Each counterpart turn runs `classify → advance → reply → check`.
+  - The **stage machine is code, not prompt.** Six stages (opening → discovery → qualification → pitch → handoff → closing) and every transition, stop rule, retry-once rule and outcome live in a pure function (`calls/stages.py`). The LLM only classifies the counterpart's turn into typed `TurnSignals` and writes the next line for the current stage.
+  - Stage goals and **must / never rules live in a playbook file** (`data/playbooks/*.toml`, every rule has a stable id). Prompts are built from the playbook, and the checker reports violations by rule id.
+  - Hard rules are checked **deterministically** after every reply (numbers only from approved facts, banned phrases, one question per turn, no echo of non-disclosed data). A violating reply is regenerated once, then replaced by a safe stage fallback line.
+  - The playbook uses **TOML**, read with the standard-library `tomllib`. No new dependency.
+  - `VOICE_PROVIDER=mock` (default) runs the call against a simulated counterpart or a human typing/speaking in the UI. `vapi` stays a stretch goal, limited to allowlisted, consenting numbers (as in ADR-013).
+- **Alternatives:**
+  - One big system prompt with the whole script: no guarantee of order or stop rules, and violations are not attributable.
+  - An LLM picks the next stage itself: non-deterministic and hard to test.
+  - YAML playbook: friendlier syntax, but needs PyYAML. TOML is in the standard library and expressive enough for lists of rules.
+  - Real telephony from the start: cost and consent risk (ADR-013).
+- **Consequences:** Every call is reproducible stage by stage, the transition logic gets table-driven tests, and "rule-following rate" becomes a measured number (EVAL §4.7). The engine is domain-agnostic: a new playbook file is a new kind of call. We accept a slower, more scripted conversation than a free-form agent.
+
+## ADR-018: Free-tier token strategy (remote Ollama, per-role providers, fallback chain, response cache)
+- **Status:** Accepted · 2026-10-31
+- **Context:** Free tiers hit their daily limits during development, and the persona simulator plus the call eval multiply the call volume. A friend's GPU machine running Ollama is reachable over Tailscale.
+- **Decision:**
+  - **Per-role provider override.** `LLM_PROVIDER` stays the default; `LLM_PROVIDER_<ROLE>` overrides it for one role (for example `simulator` and `judge` on Ollama, `extractor` on Gemini).
+  - **Fallback chain.** `LLM_FALLBACKS` (for example `groq,gemini`) wraps each role's model with LangChain `with_fallbacks()`, tried on 429 / quota / connection errors after the retry budget.
+  - **Dev response cache.** `LLM_CACHE_DIR` (default empty = off) caches responses on disk keyed by `(provider, model, prompt_version, sha256(messages), temperature)`; the eval cache (ADR-014) uses the same code.
+  - **Remote Ollama** through `OLLAMA_BASE_URL` on the Tailscale IP. Ollama is never exposed to the public internet (it has no auth). Timeout `OLLAMA_TIMEOUT_S` (60 s).
+  - Unit tests stay on fake models; daily development uses the cache and Ollama; Gemini/Groq are used for extraction quality, the final eval run and the public demo.
+- **Alternatives:**
+  - One paid provider: violates PRD G6.
+  - A routing proxy such as LiteLLM: another service and dependency for what `with_fallbacks()` already does.
+  - Local Ollama on the dev laptop: CPU-only (no discrete GPU), too slow for 7B+ models.
+- **Consequences:** Daily limits stop blocking work. Results now depend on which provider answered, so every `RunRecord` and eval report records the provider and model that actually served each role. The friend's machine can be offline, so nothing may require it.
+
+## ADR-019: The call agent always discloses that it is an AI
+- **Status:** Accepted · 2026-10-31
+- **Context:** Many sales-call scripts tell the caller not to reveal it is an AI unless asked. Several jurisdictions require or are moving toward AI-call disclosure, and hiding it undermines trust in a portfolio project about safe agents.
+- **Decision:** The opening line states that the caller is an AI assistant calling on behalf of the brand, and any "are you a bot?" is answered truthfully. Both are playbook rules (`U-AI-1`, `U-AI-2`) checked by the call eval.
+- **Alternatives:** Disclose only when asked: legally and ethically weaker, and gains little in a demo.
+- **Consequences:** Some simulated counterparts may end the call earlier; that is reported, not tuned away.
+
+## ADR-020: LLM judge for soft call rules, calibrated against human labels
+- **Status:** Accepted · 2026-10-31
+- **Context:** Some playbook rules can be checked in code (numbers, banned phrases, stage order, outcome); others cannot (empathy before resuming, not being pushy, answering the actual question).
+- **Decision:** Deterministic checks are the primary gate. Soft rules are scored by an LLM judge (role `judge`, temp 0, a different model from the caller where possible) that returns per-rule pass/fail with a quoted turn. The judge is calibrated on 15 hand-labelled transcripts from the dev split, and its agreement with the human labels is reported next to every judged metric.
+- **Alternatives:**
+  - Human review of every transcript: does not scale to ablations.
+  - Judge-only scoring: correlated errors with the caller, and no anchor.
+- **Consequences:** Soft-rule numbers carry an explicit agreement figure. If agreement on the dev labels is < 0.8, those numbers are reported as indicative only.
+
+## ADR-021: Local speech for the voice demo (faster-whisper + Piper)
+- **Status:** Proposed · 2026-10-31 (accept when T-61 starts)
+- **Context:** The call demo should work with a microphone in the browser, at zero cost, without a phone line.
+- **Decision:** Speech-to-text with `faster-whisper` (MIT, `base` on CPU, `small` on the friend's GPU); text-to-speech with Piper (local, CPU). Gradio audio components handle the browser side. Audio is processed in memory and never stored.
+- **Alternatives:**
+  - OpenAI Whisper API / ElevenLabs / Deepgram: paid after credits, and they add keys to manage.
+  - Browser Web Speech API: free, but Chrome-only and not testable server-side.
+  - `edge-tts`: free but unofficial and can break without notice.
+- **Consequences:** Two new dependencies and a larger image (models baked at build time). Speech is slower on the free CPU Space; the demo says so. Piper's newer releases are GPL-3.0 and each voice has its own licence; the README lists the voice and its licence.

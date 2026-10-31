@@ -3,7 +3,8 @@
 **How to use this file**
 - Take the **first unchecked task whose Deps are all checked**. Do one task per commit (`T-xx: summary`).
 - A task is done only when its **Done when** is met and shown (test name, command output, or a Progress log note for manual checks).
-- Estimates assume ~2–3 focused hours a day. The total is about 80 h, which is roughly 4–5 weeks part-time or 2 weeks full-time.
+- **Plan: 4 weeks, 2026-11-01 → 2026-11-28, about 25 focused hours a week.** About 99 h of work remains after M0. See the schedule below.
+- Task ids are stable. New tasks take the next free number, so ids are not always in order inside a milestone.
 - Section references (§) point to [HLD.md](HLD.md) unless stated otherwise.
 
 | Milestone | Goal | Est. |
@@ -14,10 +15,27 @@
 | M3 | Charlie: router, knowledge base, guardrails, graph + memory | 10 h |
 | M4 | Chase: policy, drafts, approval, dispatch | 9 h |
 | M5 | API, UI, Mongo, demo mode → **MVP** | 10 h |
-| M6 | Safety and observability | 7 h |
-| M7 | Evaluation with published numbers | 12 h |
-| M8 | Deploy and ship → **v1** | 8 h |
-| M9 | Stretch | — |
+| M6 | Call agent: playbook, stage machine, checks, simulator, Call tab (+ voice, nice-to-have) | 18.5 h |
+| M7 | Safety and observability | 7 h |
+| M8 | Evaluation with published numbers (incl. the `calls` suite) | 15 h |
+| M9 | Deploy and ship → **v1** | 7 h |
+| M10 | Stretch | — |
+
+M1 also gains T-53 (LLM cache, per-role providers, fallback chain: 2 h).
+
+## 4-week schedule
+
+| Week | Dates | Tasks | Hours | Done at the end of the week |
+|---|---|---|---|---|
+| 1 | Nov 1 – Nov 7 | M1 (T-06 → T-09, **T-53 first after T-08**) + M2 (T-10 → T-17) | ~24 h | `cli scout "cookie brokers in California"` prints verified leads |
+| 2 | Nov 8 – Nov 14 | M3 (T-18 → T-21) + M4 (T-22 → T-26) + M5 (T-27 → T-31) | ~27.5 h | **MVP `v0.1.0`**: search → draft → approve in the browser |
+| 3 | Nov 15 – Nov 21 | M6 text call (T-54 → T-60) + M7 (T-32 → T-35) | ~22.5 h | A simulated call in the Call tab, with stages, checks and outcome; traces in Langfuse |
+| 4 | Nov 22 – Nov 28 | M8 (T-36 → T-41, T-62) + M9 (T-42 → T-45) + T-61 if time is left | ~25 h | **`v1.0.0`**: public Space, eval numbers, README, video |
+
+**Rules for the schedule**
+- **Cut rule.** If the MVP does not work in the browser on Nov 14, M6 moves to M10 (stretch) and v1 ships without the call agent.
+- **Cut order** when a week overruns: T-61 (voice) → the Gmail-draft half of T-25 → T-34 / T-35 → T-41's improvement (keep the error analysis).
+- **Token budget (ADR-018).** Unit tests use fake models. Daily dev runs use `LLM_CACHE_DIR` and the friend's Ollama. Spend the hosted free tiers on extraction checks, the week-4 eval run and the demo. Spread the full eval over 2–3 days.
 
 ---
 
@@ -60,6 +78,10 @@
 - [ ] **T-09 Repository (in-memory)** · 2 h · Deps: T-06
   - What: `storage/repo.py`, the `Repository` protocol plus `InMemoryRepository` for leads, outreach, runs, pages (TTL), search cache and profiles (§8.1).
   - Done when: the shared repository test suite (`tests/storage/repo_contract.py`) passes against the in-memory implementation, including TTL expiry with mocked time.
+
+- [ ] **T-53 LLM cache, per-role providers, fallback chain** · 2 h · Deps: T-08
+  - What: ADR-018 in `llm.py`: `LLM_ROLES` parsing (split on the first `:`), `LLM_FALLBACKS` via `with_fallbacks()` (only on 429 / quota / connection errors), the on-disk response cache behind `LLM_CACHE_DIR`, `OLLAMA_TIMEOUT_S`, the new roles (`classifier`, `caller`, `simulator`, `judge`) and the provider actually used recorded per role. Add the settings to `Settings`, `.env.example` and §10; add `.llm_cache/` to `.gitignore`.
+  - Done when: offline tests show `simulator=ollama:qwen2.5:7b` parsed correctly, a fake 429 on the primary served by the fallback (and recorded), a validation error **not** triggering the fallback, and a second identical call served from the cache with 0 model calls. Live: one call to the friend's Ollama over Tailscale (Progress log note with the model).
 
 ## M2: Scout (discovery pipeline)
 
@@ -132,8 +154,8 @@
   - Done when: offline tests show the outbox statuses, `gmail_send` refusing non-allowlisted recipients, and demo mode forcing the outbox. Manually, one approved draft appears in your own Gmail Drafts (Progress log note).
 
 - [ ] **T-26 Voice interface + mock** · 1 h · Deps: T-22
-  - What: the `outreach/voice.py` protocol and `MockVoiceCaller` (script + simulated summary stored as a `voice` `OutreachDraft`).
-  - Done when: a test shows the mock call stored with its script, and a non-allowlisted number refused even when `VOICE_PROVIDER=vapi`.
+  - What: the `outreach/voice.py` protocol, the `call_plan` node (voice `OutreachDraft` with the call plan as its body) and a `MockVoiceCaller` stub that creates a `CallRecord` placeholder. The real call engine plugs in at T-58.
+  - Done when: a test shows a voice draft created for "call lead 1", the stub `CallRecord` stored after approval, and a non-allowlisted number refused even when `VOICE_PROVIDER=vapi`.
 
 ## M5: API, UI, storage → MVP
 
@@ -151,7 +173,7 @@
 
 - [ ] **T-30 Gradio UI** · 3 h · Deps: T-28
   - What: `ui/app.py` mounted at `/ui` with these tabs: Chat (stage progress through `astream`), Leads (table + badges + source links), Approvals (approve/edit/reject), Runs (timings, errors, trace link), and a Settings panel for the brand profile.
-  - Done when: the PRD §10 demo script works locally end to end (Progress log note + screenshot in `docs/img/`).
+  - Done when: PRD §10 steps 1–6 and 10 work locally end to end (Progress log note + screenshot in `docs/img/`). Steps 7–9 (the call) are T-60.
 
 - [ ] **T-31 Demo mode** · 1 h · Deps: T-29, T-30
   - What: `DEMO_MODE` forces the outbox and mock voice, caps `max_results` at 5, uses an anonymous per-session `user_id`, pre-fills the sample brand profile and shows a banner.
@@ -159,7 +181,41 @@
 
 **MVP checkpoint:** tag `v0.1.0` after T-31.
 
-## M6: Safety and observability
+## M6: Call agent (HLD §6.11, ADR-017)
+
+- [ ] **T-54 Call schemas + playbook** · 2 h · Deps: T-06
+  - What: the §4.1 models and the `BrandProfile` additions in `schemas.py`; `calls/playbook.py` loading `data/playbooks/<id>.toml` with `tomllib` and validating it (six stages in order, unique rule ids, every `check="code"` rule mapped to a check id); `data/playbooks/partner_intro.toml` **written from scratch** for the fictional sample brand; the sample brand profile with 6–10 `approved_facts`. Add `CALL_PLAYBOOK`, `CALL_MAX_TURNS`, `CALL_REPLY_MAX_WORDS` to `Settings`.
+  - Done when: tests load the real playbook, reject a playbook with a missing stage, a duplicate rule id and an unknown check id, and round-trip a `CallRecord` through JSON.
+
+- [ ] **T-55 Stage machine** · 2.5 h · Deps: T-54
+  - What: `calls/stages.advance(progress, signals, playbook, brand) -> (CallProgress, Directive)`, a pure function implementing the §6.11 priority list and stage table, plus fact selection.
+  - Done when: table-driven tests cover every row of the stage table, opt-out overriding everything in every stage, `asks_if_ai` → `disclose_ai`, retry-once (a second resistance exits), each stop rule → `disqualified`, an already-shared slot confirmed instead of re-asked, and `max_turns` → `incomplete`.
+
+- [ ] **T-56 Scheduler** · 1 h · Deps: T-54
+  - What: `calls/scheduler.py`: propose the next business day ≥ 24 h ahead on the hour inside 10:00–17:00 brand time; parse "tomorrow 3pm", "Thursday at 11", "next Monday morning"; reject "later" / "sometime".
+  - Done when: tests with a fixed clock cover Friday → Monday, a 16:30 call → next day 17:00 not allowed → 10:00 the day after, each parse form, timezone conversion, and vague phrases returning `None`.
+
+- [ ] **T-57 Classifier, caller prompt, reply checks** · 3.5 h · Deps: T-08, T-15, T-55
+  - What: `prompts/caller.py` (`PROMPT_VERSION`; classifier and caller prompts built from the playbook stage + universal rules + directive + selected facts); `calls/classify.py` (partner text through `wrap_untrusted(kind="call_partner")`); `calls/checks.py` with every `C-*` check in §6.11; regenerate-once then `fallback_line`.
+  - Done when: table-driven tests for each check (an invented "40%" fails `C-NUM`, "guaranteed" fails `C-BAN`, two questions fail `C-ONEQ`, an email address fails `C-PII`, a missing sign-off fails `C-SIGNOFF`); a fake-model test where the first reply fails and the regenerate passes, and one where both fail and the fallback line is used.
+
+- [ ] **T-58 Call sub-graph + Chase wiring + API** · 2.5 h · Deps: T-24, T-26, T-56, T-57
+  - What: `graph/call.py` (classify → advance → reply → check → persist, checkpointer keyed by `call_id`); `MockVoiceCaller` now starts real calls; the follow-up confirmation draft; `calls` collection in both repositories; the `/api/calls*` routes (§7). Look up current LangGraph APIs with Context7 first.
+  - Done when: offline integration tests with scripted fake models reach `meeting_booked` (with `meeting_at` and a pending confirmation draft), `opted_out` mid-qualification, and `wrong_person` in the opening; `TestClient` covers start → turn → turn → ended and a 404 on an unknown call.
+
+- [ ] **T-59 Persona simulator** · 2 h · Deps: T-58
+  - What: `calls/simulator.py` alternating the `simulator` role (persona card + hidden facts + behaviour, "stay in character") with the call sub-graph until the call ends or `max_turns`; the `/simulate` route; 6 demo personas in `data/personas/` (not the eval ones).
+  - Done when: an offline test with a scripted fake simulator ends with the expected outcome. Live on the friend's Ollama: 3 demo personas each end in a valid outcome (Progress log note: model, turns, outcomes).
+
+- [ ] **T-60 Call tab (text)** · 2 h · Deps: T-30, T-58, T-59
+  - What: a Call tab in `ui/app.py`: pick a lead and persona, Simulate or Live text, transcript with stage chips, per-turn checks (green / regenerated / fallback), the slots panel, the outcome badge and the follow-up draft link. Look up current Gradio APIs with Context7 first.
+  - Done when: PRD §10 steps 7–9 work locally (Progress log note + screenshot in `docs/img/`).
+
+- [ ] **T-61 Live voice (nice-to-have, cut first)** · 3 h · Deps: T-60
+  - What: accept ADR-021 and add `faster-whisper` + Piper; `calls/speech.py` (transcribe, synthesise, in memory only); a mic input and audio reply in the Call tab behind `SPEECH_ENABLED`; models baked into the Docker image (update T-42).
+  - Done when: a live local call by microphone reaches `meeting_booked`, an offline test with a fake speech backend passes, and no audio file is written to disk (test asserts the temp directory is unchanged).
+
+## M7: Safety and observability
 
 - [ ] **T-32 Injection heuristics** · 2 h · Deps: T-11, T-15
   - What: `injection_score` in `web/safety.py` (instruction-like phrases, role-tag spoofing, hidden-text CSS, an unusual density of imperative sentences aimed at "the AI"), with a threshold that excludes the page.
@@ -177,7 +233,7 @@
   - What: a startup job deleting expired `web_chunks` points (pages already expire through Mongo TTL).
   - Done when: a test shows points older than `DATA_TTL_DAYS` removed and newer points kept.
 
-## M7: Evaluation (see EVAL.md)
+## M8: Evaluation (see EVAL.md)
 
 - [ ] **T-36 Routing dataset** · 1.5 h · Deps: T-19
   - What: `eval/datasets/routing.jsonl`, 80 queries (dev 20 / test 60) with the distribution in EVAL §3.1.
@@ -195,18 +251,22 @@
   - What: `eval/run.py` and `eval/metrics.py`, every suite in EVAL §2, the LLM response cache, and a JSON + Markdown report with metadata (git SHA, models, prompt versions, dataset hashes).
   - Done when: unit tests on the metrics (hand-computed cases) pass, and `--suite all --provider fake` runs offline.
 
-- [ ] **T-40 Baseline + ablations** · 1.5 h · Deps: T-39
-  - What: run every suite with the default config, plus the ablations in EVAL §7.
+- [ ] **T-62 Persona dataset + `calls` suite** · 3 h · Deps: T-39, T-59
+  - What: `eval/datasets/personas.jsonl` (30, mix per EVAL §3.7), 15 hand-labelled dev transcripts in `call_labels.jsonl`, the `calls` suite with every EVAL §4.7 metric, the judge (role `judge`) with its agreement score, and the `CALL_CONTROL=prompt_only` baseline caller for ablation A8.
+  - Done when: schema tests pass (no persona id shared between splits, the archetype mix matches), metric unit tests on hand-computed transcripts pass, and `--suite calls --provider fake` runs offline.
+
+- [ ] **T-40 Baseline + ablations** · 1.5 h · Deps: T-39, T-62
+  - What: run every suite with the default config, plus the ablations in EVAL §7 (including A8–A10 for calls).
   - Done when: results are committed in `eval/results/` and EVAL §8 is filled in.
 
 - [ ] **T-41 Error analysis + one improvement** · 1 h+ · Deps: T-40
   - What: categorise the top 10 failures (EVAL §9), ship one targeted fix, re-run.
   - Done when: EVAL §9 shows the categories and the before/after delta for the fix.
 
-## M8: Deploy and ship → v1
+## M9: Deploy and ship → v1
 
 - [ ] **T-42 Dockerfile** · 1.5 h · Deps: T-31
-  - What: slim image with uv, the embedding model and tiktoken baked in, port 7860, non-root user.
+  - What: slim image with uv, the embedding model and tiktoken baked in (plus the Whisper and Piper models if T-61 shipped), port 7860, non-root user.
   - Done when: `docker run -p 7860:7860 --env-file .env <img>` serves `/ui` and `/api/health` is ok.
 
 - [ ] **T-43 Cloud services + Space** · 2 h · Deps: T-42, T-27
@@ -214,16 +274,16 @@
   - Done when: the public URL completes the PRD §10 demo script end to end (Progress log note with the URL).
 
 - [ ] **T-44 README** · 2 h · Deps: T-40, T-43
-  - What: a one-line pitch, demo link + GIF, architecture diagram, the eval table with n/date/model, quickstart, design decisions (links to ADRs), limitations, the origin note.
+  - What: a one-line pitch, demo link + GIF (discovery **and** a simulated call), architecture diagram (main graph + call sub-graph), the eval table with n/date/model including the A8 "stage machine vs one prompt" result, quickstart, the free-tier setup (Gemini key, optional Groq, optional Ollama over Tailscale), design decisions (links to ADRs), limitations (simulated personas are not real people), the origin note.
   - Done when: a fresh clone following the README quickstart runs offline tests and the CLI with a single Gemini key.
 
 - [ ] **T-45 Demo video + resume bullets** · 1.5 h · Deps: T-44
-  - What: a 2-minute video of the demo script, and resume bullets using **measured** numbers from EVAL §8.
+  - What: a 2–3-minute video of the full demo script (PRD §10, including the call), and resume bullets using **measured** numbers from EVAL §8.
   - Done when: the video link is in the README and every number in the bullets traces to an eval result file.
 
 **v1 checkpoint:** tag `v1.0.0` after T-45.
 
-## M9: Stretch (only after v1)
+## M10: Stretch (only after v1)
 
 - [ ] T-46 Vapi voice to an allowlisted, consenting number
 - [ ] T-47 MX verification on by default + eval delta
@@ -232,6 +292,8 @@
 - [ ] T-50 Compound intents ("find and email") through a plan step
 - [ ] T-51 SSE streaming endpoint for stage progress
 - [ ] T-52 Semantic cache for repeated questions
+- [ ] T-63 Hindi / Hinglish playbook and personas (Whisper and Piper both support Hindi)
+- [ ] T-64 A second playbook (for example a follow-up call after a meeting) to show the engine is domain-agnostic
 
 ---
 
@@ -250,6 +312,8 @@
 ## Blockers / decisions needed
 
 <!-- Anything waiting on a human decision. Remove once resolved (and record an ADR if it was a design choice). -->
-- **Next up: T-06** (schemas + the `StageError` / `STRICT_NODES` part of the node decorator moved from T-04).
+- **Next up: T-06** (schemas + the `StageError` / `STRICT_NODES` part of the node decorator moved from T-04). Week 1 starts 2026-11-01.
+- **Plan change 2026-10-31.** Added the call agent (M6, T-53 → T-62; ADR-017 → ADR-021), renumbered M6–M9 to M7–M10, and moved to a 4-week schedule. PRD, HLD, EVAL and CLAUDE.md updated together.
+- **Friend's Ollama machine (open).** Confirm the GPU and VRAM, then pick the `simulator` / `judge` models (7B–8B for 6–8 GB VRAM, 14B for 12 GB+). Needed by T-53's live check.
 - **Commit hook scope (open).** `.claude/settings.json` gates `git commit` with ruff/mypy/pytest, but its `if: Bash(git commit*)` condition is not applied, so the checks run before every Bash call (harmless while green, slower). Decide whether to move the condition into the hook script.
 - **Retry-After ceiling (open).** `utils/retry.py` gives up when `Retry-After` > 60 s instead of waiting (keeps runs inside the 45 s p95 budget). Confirm or change.
