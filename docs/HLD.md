@@ -411,17 +411,18 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `SEARCH_PROVIDER` / `SEARCH_FALLBACK` | `tavily` / `ddg` | |
 | `TAVILY_API_KEY` | — | |
 | `SEARCH_DOMAIN_BLOCKLIST` | built-in list | comma-separated additions |
-| `QDRANT_URL` / `QDRANT_API_KEY` | empty → local `./.qdrant` | |
+| `QDRANT_URL` / `QDRANT_API_KEY` | empty → local mode | |
+| `QDRANT_LOCAL_PATH` | `./.qdrant` | on-disk path for local mode |
 | `MONGODB_URI` | empty → in-memory | |
 | `CHUNK_TOKENS` / `CHUNK_OVERLAP` | `1000` / `150` | |
 | `EVIDENCE_K` / `EVIDENCE_MAX` | `4` / `6` | |
-| `ROUTER_MIN_CONFIDENCE` / `KB_MIN_SCORE` | `0.6` / tuned in eval | |
+| `ROUTER_MIN_CONFIDENCE` / `KB_MIN_SCORE` | `0.6` / `0.5` (start; tuned on the kb dev split) | |
 | `FETCH_TIMEOUT_S` / `FETCH_MAX_BYTES` / `FETCH_CONCURRENCY` | `10` / `2000000` / `8` | |
 | `VERIFY_MX` / `DEFAULT_PHONE_REGION` | `false` / `US` | |
 | `OUTREACH_MODE` | `outbox` | `outbox` \| `gmail_draft` \| `gmail_send` |
 | `OUTREACH_ALLOWLIST` | empty | required for `gmail_send` |
 | `OUTREACH_DAILY_CAP` / `OUTREACH_DEDUPE_DAYS` | `20` / `30` | |
-| `GMAIL_CREDENTIALS_PATH` / `GMAIL_TOKEN_PATH` | outside the repo | OAuth installed-app files |
+| `GMAIL_CREDENTIALS_PATH` / `GMAIL_TOKEN_PATH` | `~/.partner_agents/gmail_{credentials,token}.json` | OAuth installed-app files; blank → default (never the repo) |
 | `VOICE_PROVIDER` | `mock` | `mock` \| `vapi` |
 | `VAPI_API_KEY` / `VAPI_PHONE_NUMBER_ID` / `VOICE_ALLOWLIST` | — | stretch |
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` / `_HOST` | — | tracing is enabled when set |
@@ -429,6 +430,8 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `DEMO_MODE` | `false` | forces outbox + mock voice, caps `max_results` at 5 |
 | `RATE_LIMIT_RUNS_PER_HOUR` | `5` | per user/IP, discovery runs |
 | `DATA_TTL_DAYS` | `7` | pages + chunks |
+
+Validation rules in `Settings`: secrets are `SecretStr` (masked in `repr` and dumps); a blank value means "not set"; list variables are comma-separated; `DEMO_MODE=true` overrides `OUTREACH_MODE` and `VOICE_PROVIDER`; `OUTREACH_MODE=gmail_send` with an empty `OUTREACH_ALLOWLIST` is a startup error; `CHUNK_OVERLAP < CHUNK_TOKENS` and `EVIDENCE_K ≤ EVIDENCE_MAX` are enforced.
 
 ## 11. Reliability and error handling
 

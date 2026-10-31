@@ -27,7 +27,7 @@
   - What: uv project (`pyproject.toml`, Python 3.12), `src/partner_agents/` package skeleton per CLAUDE.md layout, ruff + mypy + pytest config (`live` marker registered), `.gitignore` (`.env`, `.qdrant/`, `eval/fixtures/pages/`, `eval/.cache/`, tokens).
   - Done when: `uv sync && uv run pytest` passes with one smoke test, and `uv run ruff check .` and `uv run mypy src` are clean.
 
-- [ ] **T-02 Settings** · 1 h · Deps: T-01
+- [x] **T-02 Settings** · 1 h · Deps: T-01
   - What: `config.Settings` (pydantic-settings) with every variable in §10. `.env.example` mirrors it with comments.
   - Done when: tests show safe defaults (`OUTREACH_MODE=outbox`, `VOICE_PROVIDER=mock`). An empty `QDRANT_URL` / `MONGODB_URI` selects the local/in-memory backends. `DEMO_MODE=true` overrides outreach and voice.
 
@@ -242,6 +242,7 @@
 | Date | Task | Evidence | Notes |
 |---|---|---|---|
 | 2026-10-31 | T-01 | `uv sync && uv run pytest` → 12 passed (`tests/test_smoke.py`); `ruff check .` clean; `mypy src` → no issues in 12 files | uv 0.12.5, CPython 3.12.14, pytest 9.2.0, ruff 0.17.3, mypy 2.4.1. ADR-015 records tooling; `ruff format` excludes `*.md` |
+| 2026-10-31 | T-02 | `tests/test_config.py`: `test_safe_defaults`, `test_empty_store_urls_select_local_backends`, `test_demo_mode_overrides_outreach_and_voice`, `test_env_example_loads_with_safe_defaults`; 42 passed, ruff + mypy clean | pydantic 2.14.2, pydantic-settings 2.16.2 (ADR-016). HLD §10: added `QDRANT_LOCAL_PATH`, `KB_MIN_SCORE` start 0.5, Gmail path defaults, validation rules |
 
 ## Blockers / decisions needed
 

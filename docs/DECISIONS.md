@@ -167,3 +167,12 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - black + isort + flake8: three tools where ruff is one.
   - mypy non-strict: lets untyped code in, against "full type hints" in CLAUDE.md.
 - **Consequences:** One tool installs, locks and runs everything. Strict mypy means third-party libraries without stubs need explicit `ignore_missing_imports` overrides, added per library with a comment.
+
+## ADR-016: pydantic-settings for configuration
+- **Status:** Accepted · 2026-10-31
+- **Context:** T-02 needs one typed place that reads env vars (CLAUDE.md: `config.py` is the only reader), with validation, secret masking and `.env` support.
+- **Decision:** `pydantic` v2 and `pydantic-settings` (`BaseSettings`), which brings `python-dotenv` for `.env` files. Secrets are `SecretStr`. Comma-separated lists use `NoDecode` plus a splitting validator, so they are not parsed as JSON. Safety rules live in a model validator (`DEMO_MODE` override, `gmail_send` needs an allowlist). The pydantic mypy plugin is enabled. `get_settings()` caches one instance per process; tests build `Settings(_env_file=None)` and an autouse fixture strips settings variables from the environment.
+- **Alternatives:**
+  - `os.environ` + hand-written parsing: no validation or typing, easy to read env vars from anywhere.
+  - dynaconf / environs: another config model next to the Pydantic models used everywhere else.
+- **Consequences:** Invalid config fails at startup with a clear message instead of misbehaving at run time. Every new variable must be added to `Settings`, `.env.example` and HLD §10; `test_env_example_lists_every_setting` catches a missing `.env.example` entry.
