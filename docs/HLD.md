@@ -399,7 +399,7 @@ For each page with `status=ok`:
 1. `q = raw_query + " " + f"{partner_type} {product_category} {location} contact email phone"`.
 2. Vector search the top `EVIDENCE_K` (4), filtered by `run_id` **and** `url`.
 3. Add chunks with `has_contact_pattern=true` that are not already selected, at most 3.
-4. Cap the total at `EVIDENCE_MAX` (6) and sort by `chunk_index`, so the text reads in order.
+4. Cap the total at `EVIDENCE_MAX` (6) and sort by `chunk_index`, so the text reads in order. When the cap forces a choice, the weakest vector chunks are dropped first and the contact-pattern chunks (found by a similarity-ranked search filtered to `has_contact_pattern`) are kept. A contact chunk that is already in the vector top-k counts as a vector chunk.
 
 The reasons for this design are in ADR-007. In short: a lead must be tied to one source; a global top-k lets one long page crowd out others; and pure semantic search misses the footer chunk that holds the email.
 

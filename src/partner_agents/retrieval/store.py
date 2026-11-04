@@ -10,7 +10,7 @@ page twice replaces its points.
 import logging
 import uuid
 import warnings
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 from pydantic import HttpUrl, TypeAdapter
@@ -115,18 +115,46 @@ class VectorStore:
         await self._client.upsert(self._collection, points=points)
         return len(points)
 
-    async def search(self, query: str, run_id: str, url: str, k: int) -> list[RetrievedChunk]:
-        """The ``k`` chunks of one page (this run, this url) most similar to ``query``."""
+    async def search(
+        self,
+        query: str,
+        run_id: str,
+        url: str,
+        k: int,
+        *,
+        contact_only: bool = False,
+        exclude: Collection[int] = (),
+    ) -> list[RetrievedChunk]:
+        """The ``k`` chunks of one page (this run, this url) most similar to ``query``.
+
+        ``contact_only`` keeps chunks flagged ``has_contact_pattern`` (they come back marked
+        ``selected_by="contact_pattern"``); ``exclude`` skips chunk indexes already chosen.
+        """
         await self.ensure_collection()
         vector = await self._embedder.embed_query(query)
+        query_filter = page_filter(run_id, url)
+        if contact_only:
+            query_filter.must.append(  # type: ignore[union-attr]
+                models.FieldCondition(
+                    key="has_contact_pattern", match=models.MatchValue(value=True)
+                )
+            )
+        if exclude:
+            query_filter.must_not = [
+                models.FieldCondition(key="chunk_index", match=models.MatchAny(any=sorted(exclude)))
+            ]
         response = await self._client.query_points(
             self._collection,
             query=vector,
-            query_filter=page_filter(run_id, url),
+            query_filter=query_filter,
             limit=k,
             with_payload=True,
         )
-        return [_to_chunk(point.id, point.payload or {}, point.score) for point in response.points]
+        selected_by = "contact_pattern" if contact_only else "vector"
+        return [
+            _to_chunk(point.id, point.payload or {}, point.score, selected_by)
+            for point in response.points
+        ]
 
     async def cleanup(self, older_than: datetime) -> int:
         """Delete points fetched before ``older_than``. Returns how many were removed."""
