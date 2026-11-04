@@ -383,8 +383,10 @@ The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB sav
 - **Chunker.**
   - Token-based, with tiktoken `cl100k_base` as a provider-neutral proxy.
   - `CHUNK_TOKENS=1000` and `CHUNK_OVERLAP=150`.
-  - Splits on paragraphs first, then sentences, then words. It never splits inside a word.
-  - Each chunk gets `has_contact_pattern` (email/phone regex, including obfuscated forms).
+  - Splits on paragraphs first, then sentences, then words. It never splits inside a word, except a single unbroken string longer than the limit (a base64 blob), which is cut by characters.
+  - Each chunk is a contiguous slice of the page text (`Chunk.start`/`end` are offsets). The overlap starts on a word boundary and always moves the next chunk forward; it is dropped when the next piece needs the room.
+  - Each chunk gets `has_contact_pattern` (email/phone regex, including obfuscated forms; `utils/contacts.py`).
+  - The token counter is a parameter (`chunk_text(..., count=...)`): tiktoken in production (ADR-025), a fake in unit tests.
 - **Embeddings.**
   - `BAAI/bge-small-en-v1.5` (384-d, cosine) through sentence-transformers, in batches of 32.
   - Queries use the BGE query instruction prefix.

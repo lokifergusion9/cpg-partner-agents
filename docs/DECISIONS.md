@@ -247,6 +247,15 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
 
+## ADR-025: tiktoken as the chunk-size ruler
+- **Status:** Accepted · 2026-11-04
+- **Context:** Chunks are sized in tokens (ADR-011), but the embedding model, the extraction model and the provider all tokenise differently. We need one stable, fast ruler that does not depend on the provider in use.
+- **Decision:** `tiktoken` with `cl100k_base`, used only to *count* tokens. The chunker takes the counter as a parameter, so unit tests inject a deterministic fake and stay offline: tiktoken downloads its vocabulary on first use (cached afterwards), so the real counter is exercised by a `live` test and baked into the Docker image (T-42).
+- **Alternatives:**
+  - Character counts: simple, but the same limit means very different token counts for prose and for URLs or numbers.
+  - The embedding model's own tokenizer: ties chunking to one model and costs a model load for a pure function.
+- **Consequences:** Counts are a proxy (bge and Gemini tokenise differently), so `CHUNK_TOKENS` is a size budget, not an exact model limit. The first real run needs network access or a pre-seeded cache (`TIKTOKEN_CACHE_DIR`).
+
 ## ADR-024: trafilatura and lxml for page text
 - **Status:** Accepted · 2026-11-01
 - **Context:** Scout needs readable text from arbitrary company sites (HLD §6.4). Main-content extraction is a hard problem on its own, but it throws away footers, which is where contact details live, so a second extraction path is needed.
