@@ -425,6 +425,14 @@ The reasons for this design are in ADR-007. In short: a lead must be tied to one
 4. **Dedupe within a run** by `(normalised company_name, email or phone)`. The lead with the higher verification status is kept.
 5. Rejected leads are **kept** in `state.leads`, marked as such, for audit and eval. Only eligible leads are offered to Chase.
 
+**As built (T-16, `verify/contacts.py`).**
+- An email must appear as a whole address: `xsales@a.com` or `sales@a.com.au` do not verify `sales@a.com`. A reserved domain such as `.test` is `invalid_format`. A candidate without an email or phone gets status `unchecked`.
+- The phone check is against *phone-looking runs* of the page (7+ digits with spaces and punctuation), not the whole digit stream, so digits of two neighbouring numbers cannot join into a number the page lacks. A number is checked for a possible length (not an assigned one); a trailing national-number zero (Italy) is kept.
+- Region: a country name or US state name in the lead's location (else the intent's location) selects the region; a bare `CA` or `MH` is not guessed. Otherwise `DEFAULT_PHONE_REGION`.
+- `VERIFY_MX` runs only on emails that already passed; only a definite NXDOMAIN or no-MX answer fails, a resolver timeout does not.
+- If a page body has expired from the repository, its candidates stay `unchecked` and a `StageError(scout_verify, page_missing)` is returned.
+- Dedupe key is the company name without punctuation and legal suffixes (`inc`, `llc`, `ltd`…) plus the email, else the phone. The lead whose better channel ranks higher is kept (verified > mx_failed > not_in_source > invalid_format > unchecked); the first seen wins a tie.
+
 ### 6.9 Chase: outreach (`outreach/`)
 
 - **`chase_select`.** Resolves `route.lead_selector` against the thread's latest run (or the user's recent leads). Simple selectors ("top N", by location, by name) are parsed deterministically; for anything else, the writer model picks ids from a numbered list. The result is then filtered through `policy.eligible()`.

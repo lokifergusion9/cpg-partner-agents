@@ -159,5 +159,5 @@ def test_decode_uses_the_declared_charset() -> None:
 
 def test_decode_defaults_to_utf8_and_never_raises() -> None:
     assert decode_html("Café".encode(), "text/html") == "Café"
-    assert "�" in decode_html(b"\xff\xfe bad", "text/html")
+    assert chr(0xFFFD) in decode_html(b"\xff\xfe bad", "text/html")
     assert decode_html(b"plain", "text/html; charset=no-such-codec") == "plain"

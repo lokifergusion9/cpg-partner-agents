@@ -247,6 +247,15 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
 
+## ADR-026: phonenumbers for phone parsing and E.164
+- **Status:** Accepted · 2026-11-04
+- **Context:** Scout must tell `(310) 555-0100`, `310.555.0100` and `+1 310 555 0100` apart from "a number that is not on the page", and store phones as E.164 (HLD §6.8). Phone formats differ by country, so regexes do not scale.
+- **Decision:** `phonenumbers` (the Python port of Google's libphonenumber) parses and formats. Verification itself stays deterministic and in our code: the national-number digits must appear in a phone-like run of the page text. A number is only checked for being a *possible* length, not a *valid* assigned number, so fictional `555-01xx` fixtures behave like real ones.
+- **Alternatives:**
+  - Our own regexes: wrong for non-US formats and for E.164 conversion.
+  - Treat phones as opaque strings: no normalisation, so duplicates and format variants never match the page.
+- **Consequences:** One pure-Python dependency (a large metadata file, no network). Region is guessed from the lead's location, else `DEFAULT_PHONE_REGION`.
+
 ## ADR-025 (addendum): packages for ADR-003 / ADR-004
 - T-13 (2026-11-04) added `sentence-transformers` (which brings `torch`; the Docker image in T-42 must use the CPU wheel) and `qdrant-client`. The local store is `AsyncQdrantClient(path=...)`, tests use `":memory:"`.
 
