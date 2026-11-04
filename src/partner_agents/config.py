@@ -87,6 +87,10 @@ BUILTIN_SEARCH_DOMAIN_BLOCKLIST: frozenset[str] = frozenset(
         "manta.com",
         "thomasnet.com",
         "wikipedia.org",
+        # search engines (DuckDuckGo results include ad-click redirects such as bing.com/aclick)
+        "bing.com",
+        "google.com",
+        "duckduckgo.com",
         # news
         "forbes.com",
         "bloomberg.com",
