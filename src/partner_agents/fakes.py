@@ -5,7 +5,10 @@ receives. Its ``with_structured_output(..., include_raw=True)`` mirrors the real
 it returns ``{"raw", "parsed", "parsing_error"}`` and does not raise on invalid output.
 """
 
-from collections.abc import Iterator
+import hashlib
+import math
+import re
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -71,6 +74,36 @@ class ScriptedChatModel(GenericFakeChatModel):
         if include_raw:
             return chain
         return chain | RunnableLambda(_parsed_or_raise)
+
+
+class HashingEmbedder:
+    """A deterministic bag-of-words embedder: texts sharing words get similar vectors.
+
+    No model download, so vector-store tests stay offline. Satisfies the ``Embedder`` protocol.
+    """
+
+    def __init__(self, dimension: int = 384) -> None:
+        self._dimension = dimension
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    def _vector(self, text: str) -> list[float]:
+        vector = [0.0] * self._dimension
+        for word in re.findall(r"[a-z0-9]+", text.lower()):
+            digest = hashlib.sha256(word.encode()).digest()
+            vector[int.from_bytes(digest[:4], "big") % self._dimension] += 1.0
+        norm = math.sqrt(sum(x * x for x in vector))
+        if norm == 0:
+            vector[0], norm = 1.0, 1.0
+        return [x / norm for x in vector]
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
+    async def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
 
 
 def _parsed_or_raise(result: dict[str, Any]) -> Any:

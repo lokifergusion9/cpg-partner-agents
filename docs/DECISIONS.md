@@ -247,6 +247,9 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
 
+## ADR-025 (addendum): packages for ADR-003 / ADR-004
+- T-13 (2026-11-04) added `sentence-transformers` (which brings `torch`; the Docker image in T-42 must use the CPU wheel) and `qdrant-client`. The local store is `AsyncQdrantClient(path=...)`, tests use `":memory:"`.
+
 ## ADR-025: tiktoken as the chunk-size ruler
 - **Status:** Accepted · 2026-11-04
 - **Context:** Chunks are sized in tokens (ADR-011), but the embedding model, the extraction model and the provider all tokenise differently. We need one stable, fast ruler that does not depend on the provider in use.
