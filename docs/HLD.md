@@ -286,7 +286,7 @@ class AgentState(TypedDict, total=False):
     search_hits: list[SearchHit]
     pages: list[PageRef]              # refs only; bodies in repo.pages
     evidence: dict[str, list[RetrievedChunk]]   # url -> selected chunks
-    candidates: list[ExtractedLead]
+    candidates: dict[str, list[ExtractedLead]]   # url -> what the extractor read on that page
     leads: list[Lead]                 # verified AND rejected, for audit + eval
     drafts: list[OutreachDraft]
     call_ids: list[str]               # calls created by chase_dispatch for approved voice drafts
@@ -408,6 +408,7 @@ The reasons for this design are in ADR-007. In short: a lead must be tied to one
 - There is one call per page. The extractor role runs at temp 0, with concurrency bounded by `LLM_MAX_CONCURRENCY`.
 - The prompt contains: the extraction rules ("only values literally present; else null"; `evidence_quote` must be copied verbatim), the `DiscoveryIntent`, and the evidence wrapped by `wrap_untrusted()`.
 - It returns an `ExtractionResult` (0–5 leads per page). On a validation error there is one retry with the error appended. A second failure records a `StageError` and skips the page.
+- **As built (T-15).** `state["candidates"]` is `dict[url, list[ExtractedLead]]`, parallel to `evidence`, because an `ExtractedLead` does not carry its source page and `scout_verify` must read each candidate against that page's body. Error codes (stage `scout_extract`): `invalid_output` (schema failed twice; the message names fields, never values) and `model_error` (any other failure; the message is redacted). A page with no evidence gets no call; a page that answers with no leads gives `[]`. `wrap_untrusted(text, kind, source)` returns `<<<UNTRUSTED kind=… source=… id=H>>>` … `<<<END UNTRUSTED id=H>>>`, where `H` is a hash of the (cleaned) text, so the text cannot carry a matching closing marker; look-alike markers inside it are replaced by `[marker removed]` and invisible/control characters are stripped. The page URL is only given to the model inside the marker.
 
 ### 6.8 Scout: contact verification (`verify/contacts.py`), deterministic
 
