@@ -331,7 +331,8 @@ The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB sav
 
 ### 6.2 Charlie: knowledge-base Q&A and guardrails
 
-- **Corpus.** `data/kb/*.md` holds short notes written in our own words from public sources. Front matter: `title`, `source_url`, `topic`. They are ingested into the Qdrant collection `cpg_kb` (chunk size 400 tokens).
+- **Corpus.** `data/kb/*.md` holds short notes written in our own words from public sources. Front matter: `doc_id` (equal to the file name), `title`, `topic`, `source_url` and an optional `source_title`. They are ingested into the Qdrant collection `cpg_kb` (chunk size 400 tokens, overlap 60).
+- **Ingest (T-18).** `uv run python -m partner_agents.kb.ingest [--dir data/kb]` validates every note first and reports all problems together, then embeds `"{title}\n\n{body}"` per chunk and upserts it with the payload `doc_id, title, source_url, topic, chunk_index, text` (point id from `doc_id` + `chunk_index`). Running it again replaces changed notes, drops chunks a shortened note no longer has, and removes notes that were deleted. The notes cite only sources that were checked to exist; FDA and FTC pages were not reachable from the authoring script, so FDA rules are described in general terms and point the reader to the FDA's current guidance.
 - **Answering.**
   1. Retrieve the top 5.
   2. If the best score is below `KB_MIN_SCORE`, reply with the "not in my knowledge base" template.

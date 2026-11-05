@@ -175,6 +175,117 @@ class VectorStore:
         return count
 
 
+CPG_KB = "cpg_kb"
+
+
+def kb_point_id(doc_id: str, chunk_index: int) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"kb|{doc_id}|{chunk_index}"))
+
+
+class KnowledgeStore:
+    """Qdrant collection ``cpg_kb`` for the CPG knowledge-base notes (HLD §8.2).
+
+    Payload: ``doc_id``, ``title``, ``source_url``, ``topic``, ``chunk_index``, ``text``. A
+    point id comes from ``(doc_id, chunk_index)``, so ingesting a note again replaces it.
+    """
+
+    def __init__(
+        self, client: AsyncQdrantClient, embedder: Embedder, *, collection: str = CPG_KB
+    ) -> None:
+        self._client = client
+        self._embedder = embedder
+        self._collection = collection
+        self._ready = False
+
+    async def close(self) -> None:
+        await self._client.close()
+
+    async def ensure_collection(self) -> None:
+        if self._ready:
+            return
+        if not await self._client.collection_exists(self._collection):
+            await self._client.create_collection(
+                self._collection,
+                vectors_config=models.VectorParams(
+                    size=self._embedder.dimension, distance=models.Distance.COSINE
+                ),
+            )
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)  # local mode ignores indexes
+                for field in ("topic", "doc_id"):
+                    await self._client.create_payload_index(
+                        self._collection, field, models.PayloadSchemaType.KEYWORD
+                    )
+        self._ready = True
+
+    async def upsert_doc(
+        self, doc_id: str, title: str, source_url: str, topic: str, chunks: Sequence[Chunk]
+    ) -> int:
+        """Store the chunks of one note and drop any older chunks it no longer has."""
+        await self.ensure_collection()
+        vectors = await self._embedder.embed_documents([chunk.text for chunk in chunks])
+        points = [
+            models.PointStruct(
+                id=kb_point_id(doc_id, chunk.index),
+                vector=vector,
+                payload={
+                    "doc_id": doc_id,
+                    "title": title,
+                    "source_url": source_url,
+                    "topic": topic,
+                    "chunk_index": chunk.index,
+                    "text": chunk.text,
+                },
+            )
+            for chunk, vector in zip(chunks, vectors, strict=True)
+        ]
+        if points:
+            await self._client.upsert(self._collection, points=points)
+        await self._delete(
+            models.Filter(
+                must=[
+                    models.FieldCondition(key="doc_id", match=models.MatchValue(value=doc_id)),
+                    models.FieldCondition(key="chunk_index", range=models.Range(gte=len(chunks))),
+                ]
+            )
+        )
+        return len(points)
+
+    async def prune(self, keep_doc_ids: Collection[str]) -> int:
+        """Remove the notes that are no longer on disk. Returns how many notes were removed."""
+        stale = await self.doc_ids() - set(keep_doc_ids)
+        for doc_id in stale:
+            await self._delete(
+                models.Filter(
+                    must=[
+                        models.FieldCondition(key="doc_id", match=models.MatchValue(value=doc_id))
+                    ]
+                )
+            )
+        return len(stale)
+
+    async def _delete(self, selector: models.Filter) -> None:
+        await self._client.delete(
+            self._collection, points_selector=models.FilterSelector(filter=selector)
+        )
+
+    async def count(self) -> int:
+        await self.ensure_collection()
+        return (await self._client.count(self._collection, exact=True)).count
+
+    async def doc_ids(self) -> set[str]:
+        await self.ensure_collection()
+        found: set[str] = set()
+        offset: models.ExtendedPointId | None = None
+        while True:
+            points, offset = await self._client.scroll(
+                self._collection, limit=256, offset=offset, with_payload=["doc_id"]
+            )
+            found.update(str(p.payload["doc_id"]) for p in points if p.payload)
+            if offset is None:
+                return found
+
+
 def _to_chunk(
     point: object, payload: dict[str, object], score: float, selected_by: str = "vector"
 ) -> RetrievedChunk:
