@@ -327,7 +327,10 @@ The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB sav
 - It returns a `RouteDecision` through `invoke_structured`.
 - If `confidence < ROUTER_MIN_CONFIDENCE` (0.6) and the intent is not `out_of_scope`, the intent is coerced to `clarify`.
 - If `intent=discovery` but `product_category` or `partner_type` cannot be filled, the intent becomes `clarify`.
-- Few-shot examples come from `eval/datasets/routing.jsonl` with `split=dev` only.
+- Few-shot examples come from `eval/datasets/routing.jsonl` with `split=dev` only. They are copied into `prompts/charlie.py` (`FEW_SHOT`, keyed by dataset id) so the runtime does not read `eval/`; a test checks each copy against its dev row.
+- The leads summary lists up to 25 leads as `n. company (type, location; verified email | no verified email)`, never contact values.
+- After the rules, fields that belong to another intent are cleared, and `discovery.raw_query` is set to the user's latest message as written.
+- A router failure (invalid output twice, or a model error) records a `StageError` and routes to `clarify` with an "I could not work out what you need" question; the turn never crashes.
 
 ### 6.2 Charlie: knowledge-base Q&A and guardrails
 

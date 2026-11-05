@@ -1,0 +1,20 @@
+{"id": "r001", "split": "dev", "query": "find gluten-free snack distributors in Texas", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "gluten-free snacks", "location": "Texas"}}
+{"id": "r002", "split": "dev", "query": "Find snack food brokers in California", "intent": "discovery", "discovery": {"partner_type": "broker", "product_category": "snack foods", "location": "California"}}
+{"id": "r003", "split": "dev", "query": "I need natural grocery stores in Oregon that might stock our granola", "intent": "discovery", "discovery": {"partner_type": "retailer", "product_category": "granola", "location": "Oregon"}}
+{"id": "r004", "split": "dev", "query": "California me cookie brokers dhundo", "intent": "discovery", "discovery": {"partner_type": "broker", "product_category": "cookies", "location": "California"}}
+{"id": "r005", "split": "dev", "query": "beverage distribtors near Chicago, top 5", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "beverages", "location": "Chicago"}}
+{"id": "r006", "split": "dev", "query": "list some co-packers for hot sauce", "intent": "discovery", "discovery": {"partner_type": "manufacturer", "product_category": "hot sauce", "location": null}}
+{"id": "r007", "split": "dev", "query": "organic baby food wholesalers in Maharashtra", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "organic baby food", "location": "Maharashtra"}}
+{"id": "r008", "split": "dev", "query": "What does a food broker do, and how is it different from a distributor?", "intent": "cpg_qa"}
+{"id": "r009", "split": "dev", "query": "what are slotting fees and who pays them", "intent": "cpg_qa"}
+{"id": "r010", "split": "dev", "query": "How does direct store delivery work?", "intent": "cpg_qa"}
+{"id": "r011", "split": "dev", "query": "do I need a UPC barcode before pitching a grocery buyer?", "intent": "cpg_qa"}
+{"id": "r012", "split": "dev", "query": "private label kya hota hai?", "intent": "cpg_qa"}
+{"id": "r013", "split": "dev", "query": "Draft emails to the top 3 for our gluten-free cookie brand", "intent": "outreach", "outreach_channel": "email", "lead_selector": "top 3", "context_leads": true}
+{"id": "r014", "split": "dev", "query": "email the LA ones and ask for a 15 minute intro", "intent": "outreach", "outreach_channel": "email", "lead_selector": "the LA ones", "context_leads": true}
+{"id": "r015", "split": "dev", "query": "Call the first lead", "intent": "outreach", "outreach_channel": "voice", "lead_selector": "the first one", "context_leads": true}
+{"id": "r016", "split": "dev", "query": "Find partners", "intent": "clarify"}
+{"id": "r017", "split": "dev", "query": "find me some brokers", "intent": "clarify"}
+{"id": "r018", "split": "dev", "query": "help with my snacks", "intent": "clarify"}
+{"id": "r019", "split": "dev", "query": "Write me a poem", "intent": "out_of_scope"}
+{"id": "r020", "split": "dev", "query": "write my brand's Instagram caption for the launch", "intent": "out_of_scope"}
