@@ -38,6 +38,7 @@ class AgentState(TypedDict, total=False):
     evidence: dict[str, list[RetrievedChunk]]  # url -> selected chunks
     candidates: dict[str, list[ExtractedLead]]  # url -> what the extractor read on that page
     leads: list[Lead]  # verified AND rejected, for audit + eval
+    selected_leads: list[str]  # lead ids chase_select resolved from route.lead_selector
     drafts: list[OutreachDraft]
     call_ids: list[str]  # calls created by chase_dispatch for approved voice drafts
     errors: Annotated[list[StageError], operator.add]

@@ -48,6 +48,8 @@ Lower layers never import higher ones.
 
 ## 4. Domain models (`schemas.py`)
 
+URL fields below written as `HttpUrl` use the `Url` alias in code: an `HttpUrl` that dumps as a plain `str` in Python mode too, because the checkpoint serializer msgpacks `model_dump()` output and cannot encode pydantic's `Url` objects (T-21). JSON output is unchanged.
+
 ```python
 PartnerType = Literal["retailer", "distributor", "broker", "manufacturer", "other"]
 Intent = Literal["cpg_qa", "discovery", "outreach", "clarify", "out_of_scope"]
@@ -278,6 +280,10 @@ charlie_route ─┬─ cpg_qa ────────► kb_answer ───�
                                                  └─ voice ─► call_plan ───┘     (interrupt)
 ```
 
+The Scout nodes are added to the main graph directly (`graph/scout.add_scout_nodes`), not mounted as a compiled subgraph: a subgraph returns its whole state, and the `errors` reducer would count the parent's errors twice. `scout_search` clears `pages`, `evidence`, `candidates` and `leads` left by an earlier run in the thread.
+
+**Until T-23**, the outreach branch is `chase_select → END`: it resolves `route.lead_selector` deterministically (§6.9), writes `selected_leads` and replies with the matching leads. This is how a follow-up such as "only the ones in LA" works (PRD F5): the router returns `outreach` with that selector and no goal. T-23 adds the LLM fallback, the policy filter and drafting, and drafts only when the turn asks for outreach (a goal, or a drafting or call verb).
+
 `chase_dispatch` for a voice draft does not talk to anyone. It creates a `CallRecord` and returns its `call_id`. The call itself runs in the call sub-graph (§6.11), one invocation per partner turn, with its own checkpoint thread (`call_id`).
 
 ### 5.1 State (`graph/state.py`)
@@ -294,6 +300,7 @@ class AgentState(TypedDict, total=False):
     evidence: dict[str, list[RetrievedChunk]]   # url -> selected chunks
     candidates: dict[str, list[ExtractedLead]]   # url -> what the extractor read on that page
     leads: list[Lead]                 # verified AND rejected, for audit + eval
+    selected_leads: list[str]         # lead ids chase_select resolved from route.lead_selector
     drafts: list[OutreachDraft]
     call_ids: list[str]               # calls created by chase_dispatch for approved voice drafts
     errors: Annotated[list[StageError], operator.add]
@@ -317,13 +324,13 @@ class AgentState(TypedDict, total=False):
 | `scout_extract` | evidence → `candidates` | §6.7, one LLM call per page |
 | `scout_verify` | candidates + page bodies → `leads` | §6.8, deterministic |
 | `scout_report` | leads → AI message + persist leads | summary text, the table goes to the UI |
-| `chase_select` | route + repo leads → selected leads | §6.9 |
+| `chase_select` | route + thread leads → `selected_leads` | §6.9; until T-23 it also replies with the matching leads and ends the turn |
 | `chase_draft` | leads + brand profile → `drafts` | writer role, temp 0.7 |
 | `call_plan` | lead + brand profile + playbook → voice `OutreachDraft` | deterministic: playbook id, mode, persona (simulate), the facts likely to be used |
 | `approval_gate` | drafts → `ApprovalDecision` | `interrupt()`; resumed through the API |
 | `chase_dispatch` | approved drafts → statuses (+ `CallRecord` for voice) | §6.9 |
 
-The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB saver in prod) keyed by `thread_id`. Each user turn creates a new `run_id`.
+The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB saver in prod) keyed by `thread_id`. Each user turn creates a new `run_id`. The checkpointer uses `graph/build.checkpoint_serde()`, which allowlists the `schemas` models by name, so a checkpoint cannot revive an arbitrary class; the MongoDB saver (T-27) must use it too.
 
 ## 6. Component design
 
@@ -447,7 +454,7 @@ The reasons for this design are in ADR-007. In short: a lead must be tied to one
 
 ### 6.9 Chase: outreach (`outreach/`)
 
-- **`chase_select`.** Resolves `route.lead_selector` against the thread's latest run (or the user's recent leads). Simple selectors ("top N", by location, by name) are parsed deterministically; for anything else, the writer model picks ids from a numbered list. The result is then filtered through `policy.eligible()`.
+- **`chase_select`.** Resolves `route.lead_selector` against the thread's latest run (or the user's recent leads). Simple selectors are parsed deterministically by `graph/chase.resolve_selector`: "top N" / "first N", "lead N" / "#N", ordinals ("the first one", "the last one"), "all", and otherwise words matched against company name, location and partner type (with place shorthands such as LA → Los Angeles). Positions follow the numbering the router shows. `None` means "not understood", while an empty list means "understood, nothing matches"; for anything else, the writer model picks ids from a numbered list. The result is then filtered through `policy.eligible()`.
 - **Policy (`policy.py`, pure functions).** Each check maps to a skip status:
   - The email must be verified, otherwise `skipped_ineligible`.
   - No outreach to the same recipient within `OUTREACH_DEDUPE_DAYS`, otherwise `skipped_duplicate`.
@@ -465,7 +472,8 @@ The reasons for this design are in ADR-007. In short: a lead must be tied to one
 
 ### 6.10 Memory
 
-- **Short-term.** The LangGraph checkpointer keyed by `thread_id`. Messages are trimmed to the last 20 before each LLM call.
+- **Short-term.** The LangGraph checkpointer keyed by `thread_id`. `graph/build.run_turn` keeps the thread at most 20 messages: before each turn it removes the oldest (`RemoveMessage`) so the history plus the new question and its reply fit. The router then reads only the last 6 (§6.1).
+- **Per turn.** `run_turn` creates the `run_id`, streams the graph with `stream_mode="updates"` and builds the `RunRecord` from those updates: `timings_ms` and `errors` of the nodes that ran in this turn only (the state's `errors` and `timings_ms` accumulate across the thread), tokens and providers per role, and `prompt_versions` per prompt module used. The record is saved with `repo.save_run` at the end of the turn.
 - **Long-term.** The `leads`, `outreach` and `runs` collections are keyed by `user_id`. Chase reads these, so a request like "email the brokers you found yesterday" works across threads.
 
 ### 6.11 Call agent (`calls/`, `graph/call.py`)

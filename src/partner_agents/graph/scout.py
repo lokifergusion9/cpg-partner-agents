@@ -159,7 +159,16 @@ def make_scout_search(deps: ScoutDeps) -> Node:
     @timed_node("scout_search")
     async def scout_search(state: AgentState) -> NodeUpdate:
         outcome = await deps.search.discover(_intent(state, "scout_search"))
-        return {"search_hits": outcome.hits, "errors": outcome.errors}
+        # A new search starts a new set of results: clear what an earlier run in this thread
+        # left behind, so a short-circuited run cannot report or re-save old leads.
+        return {
+            "search_hits": outcome.hits,
+            "pages": [],
+            "evidence": {},
+            "candidates": {},
+            "leads": [],
+            "errors": outcome.errors,
+        }
 
     return scout_search
 
@@ -284,9 +293,13 @@ def _after_fetch(state: AgentState) -> str:
     return "scout_index" if readable else "scout_report"
 
 
-def build_scout_graph(deps: ScoutDeps) -> CompiledStateGraph[AgentState, Any, Any, Any]:
-    """The compiled Scout subgraph over ``AgentState`` (mounted as a node by T-21)."""
-    graph = StateGraph(AgentState)
+def add_scout_nodes(graph: StateGraph[AgentState, Any, Any, Any], deps: ScoutDeps) -> None:
+    """Add the Scout nodes and their edges to ``graph``; the entry node is ``scout_search``.
+
+    The main graph (``graph/build.py``) adds them directly rather than mounting a compiled
+    subgraph: a subgraph returns its whole state, and the ``errors`` reducer would then count
+    the parent's errors twice.
+    """
     nodes: dict[str, Node] = {
         "scout_search": make_scout_search(deps),
         "scout_fetch": make_scout_fetch(deps),
@@ -300,7 +313,6 @@ def build_scout_graph(deps: ScoutDeps) -> CompiledStateGraph[AgentState, Any, An
         # LangGraph's overloads for add_node do not accept a plain async callable over a
         # TypedDict state under strict mypy, although it is exactly what they run.
         graph.add_node(name, cast(Any, node))
-    graph.add_edge(START, "scout_search")
     graph.add_conditional_edges("scout_search", _after_search, ["scout_fetch", "scout_report"])
     graph.add_conditional_edges("scout_fetch", _after_fetch, ["scout_index", "scout_report"])
     graph.add_edge("scout_index", "scout_evidence")
@@ -308,4 +320,11 @@ def build_scout_graph(deps: ScoutDeps) -> CompiledStateGraph[AgentState, Any, An
     graph.add_edge("scout_extract", "scout_verify")
     graph.add_edge("scout_verify", "scout_report")
     graph.add_edge("scout_report", END)
+
+
+def build_scout_graph(deps: ScoutDeps) -> CompiledStateGraph[AgentState, Any, Any, Any]:
+    """Scout on its own (the ``scout`` CLI command and tests)."""
+    graph = StateGraph(AgentState)
+    add_scout_nodes(graph, deps)
+    graph.add_edge(START, "scout_search")
     return graph.compile()

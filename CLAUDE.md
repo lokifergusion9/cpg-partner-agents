@@ -32,7 +32,8 @@ uv run pytest -m live                           # tests that call real APIs (nee
 uv run ruff check . --fix && uv run ruff format .
 uv run mypy src
 uv run uvicorn partner_agents.api.main:app --reload --port 7860    # API at /api, UI at /ui
-uv run python -m partner_agents.cli scout "cookie brokers in California"
+uv run python -m partner_agents.cli ask "what is a slotting fee?"          # one turn through the router
+uv run python -m partner_agents.cli scout "cookie brokers in California"   # Scout alone, no router
 uv run python -m partner_agents.kb.ingest       # (re)build the CPG knowledge base
 uv run python -m eval.run --suite routing       # suites are listed in docs/EVAL.md
 uv run python -m eval.run --suite calls --roles simulator=ollama:qwen2.5:7b   # call agent vs personas

@@ -4,9 +4,21 @@ The call-agent models of HLD §4.1 arrive with T-54. This module imports nothing
 rest of the package, so every layer can depend on it.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, EmailStr, Field, HttpUrl, computed_field
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    EmailStr,
+    Field,
+    HttpUrl,
+    PlainSerializer,
+    computed_field,
+)
+
+# An http(s) URL that dumps as a plain string, also in python mode. LangGraph's checkpoint
+# serializer msgpacks `model_dump()` output and cannot encode pydantic's Url objects.
+Url = Annotated[HttpUrl, PlainSerializer(str, return_type=str)]
 
 PartnerType = Literal["retailer", "distributor", "broker", "manufacturer", "other"]
 Intent = Literal["cpg_qa", "discovery", "outreach", "clarify", "out_of_scope"]
@@ -35,7 +47,7 @@ class RouteDecision(BaseModel):
 
 
 class SearchHit(BaseModel):
-    url: HttpUrl
+    url: Url
     title: str
     snippet: str
     rank: int
@@ -43,7 +55,7 @@ class SearchHit(BaseModel):
 
 
 class PageRef(BaseModel):  # state holds refs; page text lives in the repo (§8)
-    url: HttpUrl
+    url: Url
     title: str | None
     status: Literal[
         "ok",
@@ -57,7 +69,7 @@ class PageRef(BaseModel):  # state holds refs; page text lives in the repo (§8)
     ]
     chars: int = 0
     injection_score: float = 0.0
-    contact_page_url: HttpUrl | None = None
+    contact_page_url: Url | None = None
 
 
 class PageRecord(BaseModel):  # the `pages` collection (§8.1); TTL runs from fetched_at
@@ -70,7 +82,7 @@ class PageRecord(BaseModel):  # the `pages` collection (§8.1); TTL runs from fe
 
 class RetrievedChunk(BaseModel):
     chunk_id: str
-    url: HttpUrl
+    url: Url
     chunk_index: int
     text: str
     score: float
@@ -111,12 +123,12 @@ class Lead(BaseModel):
     company_name: str
     partner_type: PartnerType | None
     location: str | None
-    website: HttpUrl | None
+    website: Url | None
     email: str | None
     email_status: VerificationStatus
     phone: str | None  # E.164 when parseable
     phone_status: VerificationStatus
-    source_url: HttpUrl
+    source_url: Url
     evidence_quote: str
     created_at: AwareDatetime
 
@@ -139,7 +151,7 @@ class BrandProfile(BaseModel):
     value_prop: str
     sender_name: str
     sender_email: EmailStr
-    website: HttpUrl | None = None
+    website: Url | None = None
     founder_name: str  # the human the call agent books meetings for
     category: str  # "gluten-free cookies"
     target_regions: list[str] = []  # territory stop rule; empty = anywhere

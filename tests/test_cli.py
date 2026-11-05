@@ -208,3 +208,29 @@ def test_build_deps_wires_the_real_services_without_touching_the_network(tmp_pat
 
     asyncio.run(close())
     assert deps.settings is settings
+
+
+def test_ask_is_a_command() -> None:
+    args = cli.build_parser().parse_args(["ask", "what is a slotting fee?"])
+    assert (args.command, args.message) == ("ask", "what is a slotting fee?")
+
+
+def test_render_turn_shows_the_reply_intent_and_timings() -> None:
+    from datetime import UTC, datetime
+
+    from partner_agents.graph.build import TurnResult
+    from partner_agents.schemas import RunRecord
+
+    now = datetime.now(UTC)
+    run = RunRecord(
+        run_id="r_1", user_id="cli", thread_id="cli", intent="cpg_qa", started_at=now,
+        finished_at=now, timings_ms={"kb_answer": 30, "charlie_route": 10}, tokens={"router": 5},
+        prompt_versions={}, errors=[],
+    )  # fmt: skip
+    text = cli.render_turn(TurnResult(reply="An answer [1].", run=run, state={}))
+    assert text.startswith("An answer [1].")
+    assert "Intent: cpg_qa" in text
+    assert "(no leads)" not in text  # the lead table is only for discovery
+    timing_lines = text.split("Timings:\n")[1].splitlines()
+    assert [line.split()[0] for line in timing_lines[:3]] == ["charlie_route", "kb_answer", "total"]
+    assert "Tokens: router: 5" in text

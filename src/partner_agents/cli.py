@@ -1,9 +1,12 @@
-"""Command line entry point: ``python -m partner_agents.cli scout "cookie brokers in California"``.
+"""Command line entry point.
 
-``scout`` runs the Scout subgraph on one query and prints the leads, the errors and the time
-each stage took. Until Charlie's router exists (T-19, T-21) the query is turned into a
-``DiscoveryIntent`` by simple keyword rules; ``--partner-type`` / ``--category`` /
-``--location`` override them.
+- ``ask "<message>"`` sends one message through the full graph: Charlie's router picks the
+  branch (knowledge-base answer, discovery, lead selection, clarify or refuse).
+- ``scout "<query>"`` runs Scout alone, without a router model: the query becomes a
+  ``DiscoveryIntent`` through simple keyword rules, which ``--partner-type`` /
+  ``--category`` / ``--location`` override. Handy for checking Scout in isolation.
+
+Both print the reply, the leads, the errors and the time each stage took.
 """
 
 import argparse
@@ -17,6 +20,7 @@ from typing import Any, get_args
 from langchain_core.messages import AIMessage, HumanMessage
 
 from partner_agents.config import Settings, get_settings
+from partner_agents.graph.build import TurnResult, build_app_deps, build_graph, run_turn
 from partner_agents.graph.scout import ScoutDeps, build_scout_graph
 from partner_agents.graph.state import AgentState
 from partner_agents.llm import get_chat_model, track_providers, track_usage
@@ -35,6 +39,7 @@ from partner_agents.web.fetch import Fetcher
 from partner_agents.web.search import SearchService, build_providers
 
 NODE_ORDER = (
+    "charlie_route",
     "scout_search",
     "scout_fetch",
     "scout_index",
@@ -202,9 +207,41 @@ async def _scout(args: argparse.Namespace, settings: Settings) -> str:
     return render(final)
 
 
+def render_turn(result: TurnResult) -> str:
+    """One ``ask`` turn: the reply, the leads of a discovery, errors, timings and tokens."""
+    run = result.run
+    sections = [result.reply]
+    if run.intent == "discovery":
+        sections.append(format_leads(result.state.get("leads", [])))
+    sections += [
+        f"Intent: {run.intent}  (run {run.run_id})",
+        "Errors:\n" + format_errors(run.errors),
+        "Timings:\n" + format_timings(run.timings_ms),
+    ]
+    if run.tokens:
+        sections.append("Tokens: " + ", ".join(f"{r}: {n}" for r, n in sorted(run.tokens.items())))
+    if run.providers:
+        sections.append(
+            "Models: " + ", ".join(f"{r}={p}" for r, p in sorted(run.providers.items()))
+        )
+    return "\n\n".join(sections)
+
+
+async def _ask(args: argparse.Namespace, settings: Settings) -> str:
+    deps = build_app_deps(settings)
+    graph = build_graph(deps)
+    try:
+        result = await run_turn(graph, deps, thread_id="cli", user_id="cli", text=args.message)
+    finally:
+        await deps.aclose()
+    return render_turn(result)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="partner_agents.cli", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    ask = commands.add_parser("ask", help="one message through Charlie's router and its branch")
+    ask.add_argument("message", help='for example "what is a slotting fee?"')
     scout = commands.add_parser("scout", help="find partners and verify their contacts")
     scout.add_argument("query", help='for example "cookie brokers in California"')
     scout.add_argument("--max-results", type=int, default=10, choices=range(1, 26), metavar="1-25")
@@ -218,7 +255,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = get_settings()
     configure_logging(settings)
-    print(asyncio.run(_scout(args, settings)))
+    command = _ask if args.command == "ask" else _scout
+    print(asyncio.run(command(args, settings)))
     return 0
 
 
