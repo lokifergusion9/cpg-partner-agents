@@ -77,6 +77,19 @@ class RetrievedChunk(BaseModel):
     selected_by: Literal["vector", "contact_pattern"]
 
 
+class KBPassage(BaseModel):  # one `cpg_kb` search hit (§6.2)
+    doc_id: str
+    title: str
+    source_url: str
+    chunk_index: int
+    text: str
+    score: float
+
+
+class KBAnswer(BaseModel):  # writer output for kb_answer; cites passages as [n]
+    answer: str
+
+
 class ExtractedLead(BaseModel):  # what the LLM returns (per page)
     company_name: str
     partner_type: PartnerType | None = None

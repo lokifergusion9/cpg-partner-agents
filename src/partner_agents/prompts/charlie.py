@@ -1,4 +1,6 @@
-"""Charlie's router prompt (HLD §6.1). Bump ``PROMPT_VERSION`` on any wording change.
+"""Charlie's prompts: the router (HLD §6.1) and knowledge-base answers (HLD §6.2).
+
+Bump ``PROMPT_VERSION`` on any wording change.
 
 The few-shot examples are copies of rows from ``eval/datasets/routing.jsonl`` with
 ``split: dev`` (never ``test``, CLAUDE.md rule 9); ``tests/prompts/test_charlie.py`` checks
@@ -9,9 +11,9 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from langchain_core.messages import AnyMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage, SystemMessage
 
-from partner_agents.schemas import Lead
+from partner_agents.schemas import KBPassage, Lead
 
 PROMPT_VERSION = "charlie-v1"
 
@@ -155,3 +157,33 @@ def build_router_messages(
     """System prompt (rules, examples, leads) followed by the last ``ROUTER_HISTORY`` messages."""
     system = f"{ROUTER_SYSTEM}\n{_few_shot_text()}\n\n{leads_summary(leads)}"
     return [SystemMessage(content=system), *history[-ROUTER_HISTORY:]]
+
+
+# --- knowledge-base answers (HLD §6.2) ----------------------------------------------
+
+KB_SYSTEM = """\
+You answer questions about the Consumer Packaged Goods (CPG) trade for a small brand's team.
+
+Use ONLY the numbered passages below. They are short notes from the assistant's knowledge \
+base. Do not add facts, figures, laws or company names that are not in them.
+
+Rules:
+- Cite every claim with the number of the passage it comes from, in square brackets, for \
+example [1] or [2][3]. Only cite numbers that exist.
+- If the passages do not answer the question, say so in one sentence and cite nothing.
+- Be concise: at most 150 words, plain language, no headings.
+- Regulations change: when a passage is about rules (FDA, labelling, food safety), say that \
+the reader should check the current official guidance.
+"""
+
+
+def passages_text(passages: Sequence[KBPassage]) -> str:
+    return "\n\n".join(
+        f"[{number}] {passage.title}\n{passage.text}"
+        for number, passage in enumerate(passages, start=1)
+    )
+
+
+def build_kb_messages(question: str, passages: Sequence[KBPassage]) -> list[BaseMessage]:
+    user = f"Passages:\n\n{passages_text(passages)}\n\nQuestion: {question}"
+    return [SystemMessage(content=KB_SYSTEM), HumanMessage(content=user)]

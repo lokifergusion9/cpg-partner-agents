@@ -91,6 +91,12 @@ class RetrievedChunk(BaseModel):
     chunk_id: str; url: HttpUrl; chunk_index: int; text: str
     score: float; selected_by: Literal["vector", "contact_pattern"]
 
+class KBPassage(BaseModel):                # one `cpg_kb` search hit (§6.2)
+    doc_id: str; title: str; source_url: str; chunk_index: int; text: str; score: float
+
+class KBAnswer(BaseModel):                 # writer output for kb_answer; cites passages as [n]
+    answer: str
+
 class ExtractedLead(BaseModel):            # what the LLM returns (per page)
     company_name: str
     partner_type: PartnerType | None = None
@@ -337,10 +343,11 @@ The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB sav
 - **Corpus.** `data/kb/*.md` holds short notes written in our own words from public sources. Front matter: `doc_id` (equal to the file name), `title`, `topic`, `source_url` and an optional `source_title`. They are ingested into the Qdrant collection `cpg_kb` (chunk size 400 tokens, overlap 60).
 - **Ingest (T-18).** `uv run python -m partner_agents.kb.ingest [--dir data/kb]` validates every note first and reports all problems together, then embeds `"{title}\n\n{body}"` per chunk and upserts it with the payload `doc_id, title, source_url, topic, chunk_index, text` (point id from `doc_id` + `chunk_index`). Running it again replaces changed notes, drops chunks a shortened note no longer has, and removes notes that were deleted. The notes cite only sources that were checked to exist; FDA and FTC pages were not reachable from the authoring script, so FDA rules are described in general terms and point the reader to the FDA's current guidance.
 - **Answering.**
-  1. Retrieve the top 5.
-  2. If the best score is below `KB_MIN_SCORE`, reply with the "not in my knowledge base" template.
-  3. Otherwise the writer (temp 0.3) answers using only the numbered passages and cites them as `[n]`.
-- **Post-check.** The answer must contain at least one valid `[n]`. If it does not, the canned fallback is returned.
+  1. Retrieve the top 5 (`KnowledgeStore.search` → `KBPassage`, best first).
+  2. If there is no passage or the best score is below `KB_MIN_SCORE`, reply with the "not in my knowledge base" template (`graph/charlie.NOT_IN_KB`) without calling a model.
+  3. Otherwise the writer (temp 0.3) answers using only the numbered passages and cites them as `[n]`. The reply is a `KBAnswer` through `invoke_structured`, so it gets the chain, retry and cache of §9.
+- **Post-check.** The answer must contain at least one `[n]` and every cited number must be one of the passages shown (`[1, 2]` counts as two). Otherwise the same fallback template is returned. A valid answer is followed by a `Sources:` list of the cited passages only (`[n] title: source_url`). A writer or store failure records a `StageError` and also returns the fallback.
+- **Fixed replies.** `refuse` returns `REFUSAL`, which lists the three capabilities (discovery, approved outreach, CPG questions). `ask_clarification` returns `route.clarifying_question`.
 - **Guardrail layers.**
   1. Router intent `out_of_scope` → `refuse`.
   2. The system prompt carries the scope policy.

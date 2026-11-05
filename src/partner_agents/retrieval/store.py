@@ -19,7 +19,7 @@ from qdrant_client import AsyncQdrantClient, models
 from partner_agents.config import Settings
 from partner_agents.retrieval.chunking import Chunk
 from partner_agents.retrieval.embeddings import Embedder
-from partner_agents.schemas import RetrievedChunk
+from partner_agents.schemas import KBPassage, RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +268,26 @@ class KnowledgeStore:
         await self._client.delete(
             self._collection, points_selector=models.FilterSelector(filter=selector)
         )
+
+    async def search(self, query: str, k: int = 5) -> list[KBPassage]:
+        """The ``k`` knowledge-base chunks most similar to ``query``, best first."""
+        await self.ensure_collection()
+        vector = await self._embedder.embed_query(query)
+        response = await self._client.query_points(
+            self._collection, query=vector, limit=k, with_payload=True
+        )
+        return [
+            KBPassage(
+                doc_id=str(payload["doc_id"]),
+                title=str(payload["title"]),
+                source_url=str(payload["source_url"]),
+                chunk_index=int(payload["chunk_index"]),
+                text=str(payload["text"]),
+                score=point.score,
+            )
+            for point in response.points
+            if (payload := point.payload)
+        ]
 
     async def count(self) -> int:
         await self.ensure_collection()
