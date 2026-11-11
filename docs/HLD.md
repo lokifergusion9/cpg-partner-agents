@@ -457,10 +457,10 @@ The reasons for this design are in ADR-007. In short: a lead must be tied to one
 - **`chase_select`.** Resolves `route.lead_selector` against the thread's latest run (or the user's recent leads). Simple selectors are parsed deterministically by `graph/chase.resolve_selector`: "top N" / "first N", "lead N" / "#N", ordinals ("the first one", "the last one"), "all", and otherwise words matched against company name, location and partner type (with place shorthands such as LA → Los Angeles). Positions follow the numbering the router shows. `None` means "not understood", while an empty list means "understood, nothing matches"; for anything else, the writer model picks ids from a numbered list. The result is then filtered through `policy.eligible()`.
 - **Policy (`policy.py`, pure functions).** Each check maps to a skip status:
   - The email must be verified, otherwise `skipped_ineligible`.
-  - No outreach to the same recipient within `OUTREACH_DEDUPE_DAYS`, otherwise `skipped_duplicate`.
-  - A per-user daily token bucket of `OUTREACH_DAILY_CAP`, otherwise `skipped_cap`.
-  - In `gmail_send` mode the recipient must be on `OUTREACH_ALLOWLIST`.
-  - The body must be ≤ 180 words and contain the sender name and the opt-out line. If the model omits the opt-out line, it is appended.
+  - In `gmail_send` mode the recipient must be on `OUTREACH_ALLOWLIST` (case-insensitive exact address), otherwise `skipped_ineligible`.
+  - No outreach to the same recipient within `OUTREACH_DEDUPE_DAYS`, otherwise `skipped_duplicate`. Only drafts that were or may still be delivered count (`pending_approval`, `approved`, `sent`, `drafted_in_gmail`, `outboxed`); rejected, failed and skipped drafts do not.
+  - A per-user daily token bucket of `OUTREACH_DAILY_CAP`, otherwise `skipped_cap`. `TokenBucket` (frozen model: `capacity`, `tokens`, `updated_at`) refills evenly over 24 h and never above capacity; `take(now)` returns `(allowed, new_bucket)`. The checks run in the order above (`check_lead()`), and a token is spent only when every other check passes. The caller stores the returned bucket.
+  - The body must be ≤ 180 words and contain the sender name and the opt-out line. If the body has no "unsubscribe" / "opt out" wording, `OPT_OUT_LINE` is appended before the word count. `enforce_body()` returns the fixed body plus its problems (`too_long`, `missing_sender`).
 - **`chase_draft`.** The writer role (temp 0.7) gets the `BrandProfile`, the user's goal and the lead fields, and returns an `EmailDraft`. The prompt forbids unverifiable claims and fake familiarity.
 - **`approval_gate`.** Calls `interrupt({"drafts": [...]})`. The API returns `pending_approval`. `POST /api/chat/{thread_id}/approve` resumes with `Command(resume=ApprovalDecision)`. Drafts that are neither approved nor edited become `rejected`.
 - **`chase_dispatch`** sends according to `OUTREACH_MODE`:

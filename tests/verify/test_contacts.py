@@ -47,7 +47,8 @@ def verify(
     url: str = URL,
     **kwargs: Any,
 ) -> VerificationResult:
-    repo = InMemoryRepository()
+    # Pages are dated NOW, so keep the page TTL off the wall clock.
+    repo = InMemoryRepository(clock=lambda: NOW)
     run(
         repo.save_page(
             PageRecord(run_id="r_1", url=url, text=text, contact_text=contact_text, fetched_at=NOW)
@@ -393,7 +394,7 @@ def test_a_bad_website_becomes_none(website: str | None) -> None:
 def test_the_better_verified_duplicate_wins() -> None:
     weak = candidate(company_name="Acme Foods, Inc.", email="sales@acme.example")
     strong = candidate(company_name="ACME FOODS", email="sales@acme.example")
-    repo = InMemoryRepository()
+    repo = InMemoryRepository(clock=lambda: NOW)
     run(repo.save_page(PageRecord(run_id="r_1", url=URL, text="no email here", fetched_at=NOW)))
     run(
         repo.save_page(
