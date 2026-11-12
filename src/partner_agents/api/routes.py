@@ -4,11 +4,8 @@
 demo mode). The call routes (``/calls/...``) arrive with the call agent (M6).
 """
 
-import asyncio
 import secrets
 import uuid
-import weakref
-from dataclasses import dataclass, field
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -16,8 +13,7 @@ from pydantic import BaseModel, Field
 
 from partner_agents.api.errors import ApiError
 from partner_agents.graph.build import (
-    AppDeps,
-    Graph,
+    Context,
     NothingToApprove,
     TurnResult,
     resume_turn,
@@ -35,24 +31,6 @@ from partner_agents.schemas import (
 
 ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 UserId = Annotated[str, Query(pattern=ID_PATTERN)]
-
-
-@dataclass
-class Context:
-    """What the routes need: the dependencies, the compiled graph and per-thread locks."""
-
-    deps: AppDeps
-    graph: Graph
-    locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = field(
-        default_factory=weakref.WeakValueDictionary
-    )
-
-    def lock(self, thread_id: str) -> asyncio.Lock:
-        """One turn at a time per thread, so two requests cannot interleave its state."""
-        lock = self.locks.get(thread_id)
-        if lock is None:
-            lock = self.locks[thread_id] = asyncio.Lock()
-        return lock
 
 
 def get_context(request: Request) -> Context:

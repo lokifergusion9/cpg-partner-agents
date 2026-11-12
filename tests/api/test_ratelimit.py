@@ -110,7 +110,7 @@ def test_idle_full_buckets_are_dropped_when_the_table_grows() -> None:
 def discovery_app(qdrant: AsyncQdrantClient, clock: Clock, runs: int, *extra: Any) -> TestClient:
     deps = make_deps(qdrant, *[DISCOVERY] * runs, *extra)
     deps.rate_limiter = RateLimiter(5, clock=clock)
-    return TestClient(create_app(deps))
+    return TestClient(create_app(deps, with_ui=False))
 
 
 def ask(web: TestClient, text: str = "find cookie brokers", user: str = "u_1") -> Any:

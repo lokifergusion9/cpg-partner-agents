@@ -25,6 +25,7 @@ dependencies = [
     "google-auth>=2.62.0",
     "fastapi>=0.162.5",
     "uvicorn[standard]>=0.54.0",
+    "gradio>=6.31.0",
 ]
 
 [dependency-groups]

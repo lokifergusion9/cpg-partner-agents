@@ -57,7 +57,7 @@ def deps_for(qdrant: AsyncQdrantClient, *routes: RouteDecision, **settings: Any)
 
 @pytest.fixture
 def web(client: AsyncQdrantClient) -> Iterator[TestClient]:  # noqa: F811
-    with TestClient(create_app(deps_for(client, DISCOVERY, TOP_TWO))) as test_client:
+    with TestClient(create_app(deps_for(client, DISCOVERY, TOP_TWO), with_ui=False)) as test_client:
         yield test_client
 
 
@@ -194,7 +194,7 @@ def test_an_unexpected_failure_is_a_generic_500(client: AsyncQdrantClient) -> An
         raise RuntimeError("secret detail buyer@acme.example")
 
     deps.repo.list_drafts = boom  # type: ignore[method-assign]
-    with TestClient(create_app(deps), raise_server_exceptions=False) as test_client:
+    with TestClient(create_app(deps, with_ui=False), raise_server_exceptions=False) as test_client:
         response = test_client.get("/api/outreach", params={"user_id": "u_1"})
     assert response.status_code == 500 and error_of(response)["code"] == "internal_error"
     assert "secret" not in response.text and "acme" not in response.text
@@ -205,7 +205,7 @@ def test_an_unexpected_failure_is_a_generic_500(client: AsyncQdrantClient) -> An
 
 def keyed(client_: AsyncQdrantClient, **extra: Any) -> TestClient:
     settings: dict[str, Any] = {"app_api_key": SecretStr("s3cret"), **extra}
-    return TestClient(create_app(deps_for(client_, DISCOVERY, **settings)))
+    return TestClient(create_app(deps_for(client_, DISCOVERY, **settings), with_ui=False))
 
 
 def test_a_missing_or_wrong_api_key_is_401(client: AsyncQdrantClient) -> None:  # noqa: F811

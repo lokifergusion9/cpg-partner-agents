@@ -9,7 +9,9 @@ last ``MAX_MESSAGES`` messages, and a ``RunRecord`` (timings of every node that 
 tokens and providers per role, prompt versions) saved at the end.
 """
 
+import asyncio
 import uuid
+import weakref
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -167,6 +169,27 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
 
 
 @dataclass
+class Context:
+    """A running app: the dependencies, the compiled graph and per-thread locks.
+
+    Shared by the API and the UI, so both serialise the turns of one thread the same way.
+    """
+
+    deps: AppDeps
+    graph: Graph
+    locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = field(
+        default_factory=weakref.WeakValueDictionary
+    )
+
+    def lock(self, thread_id: str) -> asyncio.Lock:
+        """One turn at a time per thread, so two requests cannot interleave its state."""
+        lock = self.locks.get(thread_id)
+        if lock is None:
+            lock = self.locks[thread_id] = asyncio.Lock()
+        return lock
+
+
+@dataclass
 class TurnResult:
     reply: str
     run: RunRecord
@@ -192,7 +215,13 @@ class _Observed:
     providers: dict[str, str] = field(default_factory=dict)
 
 
-async def _drive(graph: Graph, config: RunnableConfig, graph_input: Any, run_id: str) -> _Observed:
+async def _drive(
+    graph: Graph,
+    config: RunnableConfig,
+    graph_input: Any,
+    run_id: str,
+    on_node: Callable[[str], None] | None = None,
+) -> _Observed:
     """Stream the graph once (a new turn or a resume) and collect what the RunRecord needs."""
     seen = _Observed()
     with run_context(run_id), track_usage() as tokens, track_providers() as providers:
@@ -200,6 +229,8 @@ async def _drive(graph: Graph, config: RunnableConfig, graph_input: Any, run_id:
             for node, update in chunk.items():
                 if not isinstance(update, dict):
                     continue  # an interrupt marker, not a node update
+                if on_node is not None:
+                    on_node(node)
                 seen.timings.update(update.get("timings_ms", {}))
                 seen.errors.extend(update.get("errors", []))
                 if node in _PROMPTS:
@@ -226,11 +257,13 @@ async def run_turn(
     user_id: str,
     text: str,
     rate_keys: Sequence[str] | None = None,
+    on_node: Callable[[str], None] | None = None,
 ) -> TurnResult:
     """Run one user message through the graph in ``thread_id`` and persist its ``RunRecord``.
 
     If the turn ends at the approval gate, ``TurnResult.pending_approval`` holds the drafts.
-    ``rate_keys`` name who a discovery run counts against (default: the user).
+    ``rate_keys`` name who a discovery run counts against (default: the user). ``on_node`` is
+    called with the name of each node as it finishes (the UI shows it as progress).
     """
     run_id = new_run_id()
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
@@ -246,7 +279,7 @@ async def run_turn(
         "retry_after_s": None,  # a refusal in an earlier turn must not stick
     }
     started = deps.clock()
-    seen = await _drive(graph, config, turn_input, run_id)
+    seen = await _drive(graph, config, turn_input, run_id, on_node)
     route = (await graph.aget_state(config)).values.get("route")
     run = RunRecord(
         run_id=run_id,
@@ -266,7 +299,13 @@ async def run_turn(
 
 
 async def resume_turn(
-    graph: Graph, deps: AppDeps, *, thread_id: str, user_id: str, decision: ApprovalDecision
+    graph: Graph,
+    deps: AppDeps,
+    *,
+    thread_id: str,
+    user_id: str,
+    decision: ApprovalDecision,
+    on_node: Callable[[str], None] | None = None,
 ) -> TurnResult:
     """Resume the thread's paused approval with ``decision``.
 
@@ -280,7 +319,7 @@ async def resume_turn(
     if snapshot.values.get("user_id") != user_id:
         raise NothingToApprove(f"thread {thread_id} has no drafts waiting for approval")
     run_id = str(snapshot.values["run_id"])
-    seen = await _drive(graph, config, Command(resume=decision), run_id)
+    seen = await _drive(graph, config, Command(resume=decision), run_id, on_node)
     run = await deps.repo.get_run(run_id)
     if run is None:  # the first part was never saved; should not happen
         raise NothingToApprove(f"run {run_id} is unknown")

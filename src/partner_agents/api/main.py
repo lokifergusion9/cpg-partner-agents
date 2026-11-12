@@ -7,17 +7,22 @@ from settings on startup, so importing this module stays cheap.
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import gradio as gr
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from partner_agents.api.errors import install_error_handlers
 from partner_agents.api.ratelimit import RateLimiter
-from partner_agents.api.routes import Context, open_router, router
+from partner_agents.api.routes import open_router, router
 from partner_agents.config import Settings, get_settings
-from partner_agents.graph.build import AppDeps, build_app_deps, build_graph
+from partner_agents.graph.build import AppDeps, Context, build_app_deps, build_graph
 from partner_agents.observability import configure_logging
+from partner_agents.ui.app import build_ui
 
 
-def create_app(deps: AppDeps | None = None, settings: Settings | None = None) -> FastAPI:
+def create_app(
+    deps: AppDeps | None = None, settings: Settings | None = None, *, with_ui: bool = True
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         owned = deps
@@ -43,6 +48,14 @@ def create_app(deps: AppDeps | None = None, settings: Settings | None = None) ->
     install_error_handlers(app)
     app.include_router(router)
     app.include_router(open_router)
+    if with_ui:
+
+        @app.get("/", include_in_schema=False)
+        async def home() -> RedirectResponse:
+            return RedirectResponse("/ui/")
+
+        ui = build_ui(lambda: app.state.ctx)
+        app = gr.mount_gradio_app(app, ui, path="/ui", ssr_mode=False)
     return app
 
 

@@ -603,6 +603,20 @@ All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` an
 
 **Streaming.** The UI uses `graph.astream(stream_mode="updates")` in-process to show stage progress. A server-sent-events endpoint is a stretch task (T-51).
 
+### 7.1 UI (`ui/app.py`)
+
+Gradio, mounted on the FastAPI app at `/ui` (`/` redirects there). The UI calls the graph in-process through the same `run_turn` and `resume_turn` as the API, shares the per-thread lock (`graph/build.Context`) and counts against the same discovery limit (`user:<id>` and `ip:<addr>` keys). Handlers are plain functions (`send_message`, `decide`, `save_profile`, `lead_rows`, ...) so they are tested without a browser.
+
+| Tab | What it shows |
+|---|---|
+| Chat | The conversation, with a progress line from `run_turn(on_node=...)` (for example "Searching the web..."). A thread that waits for approval answers new messages with a pointer to the Approvals tab. |
+| Leads | The leads of the last search: email with a badge (verified, no mail server, not on the page, invalid), phone and a source link. |
+| Approvals | One block per pending draft with Approve, Edit and approve, or Reject (default Reject), editable subject and body (a call plan can only be approved or rejected), and the outbox and history table. An edit that breaks the policy reappears with the broken rule. |
+| Runs | Stage timings in ms, tokens per role, errors and the trace link of the user's runs. |
+| Settings | The user id (random per session unless typed) and the brand profile, with Load and Save. Facts keep their id and tags while their text is unchanged. |
+
+Gradio's analytics and version check to `api.gradio.app` are off (`GRADIO_ANALYTICS_ENABLED=False` is set in `ui/__init__.py`).
+
 ## 8. Data stores
 
 ### 8.1 MongoDB (Atlas M0; in-memory `Repository` for dev/tests)
