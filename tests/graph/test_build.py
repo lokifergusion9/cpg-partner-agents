@@ -261,6 +261,159 @@ def test_an_outreach_turn_drafts_emails_for_the_selected_leads(client: AsyncQdra
     assert len(asyncio.run(deps.repo.list_drafts("u_1", status="pending_approval"))) == 2
 
 
+# --- approval gate (T-24) -----------------------------------------------------------
+
+
+def seeded_approval(client: AsyncQdrantClient) -> tuple[AppDeps, Graph, Any]:
+    """A thread that already holds three verified leads and a brand profile."""
+    from datetime import UTC, datetime
+
+    from partner_agents.schemas import BrandProfile, EmailDraft, Lead
+
+    reply = EmailDraft(subject="Hello", body="A short intro. Priya Shah").model_dump_json()
+    top3 = RouteDecision(
+        intent="outreach", confidence=0.9, lead_selector="top 3", outreach_goal="intro",
+        reason="email",
+    )  # fmt: skip
+    deps = make_deps(client, top3)
+    keys = ("acme", "beta", "gamma")
+    deps.writer = ByPageModel(
+        messages=iter([]), pages={f"https://{k}.example/": [reply] for k in keys}
+    )
+    asyncio.run(
+        deps.repo.save_profile(
+            "u_1",
+            BrandProfile(
+                brand_name="Crumb & Co",
+                product="cookies",
+                value_prop="v",
+                sender_name="Priya Shah",
+                sender_email="priya@crumb.example",
+                founder_name="Priya",
+                category="cookies",
+                sign_off="Thanks",
+            ),
+        )
+    )
+    leads = [
+        Lead(
+            id=k,
+            run_id="r_0",
+            user_id="u_1",
+            company_name=f"{k.title()} Foods",
+            partner_type="broker",
+            location="LA",
+            website=None,
+            email=f"buyer@{k}.example",
+            email_status="verified",
+            phone=None,
+            phone_status="unchecked",
+            source_url=f"https://{k}.example/",
+            evidence_quote="q",
+            created_at=datetime.now(UTC),
+        )
+        for k in keys
+    ]
+    graph = build_graph(deps)
+    config: Any = {"configurable": {"thread_id": "t_1"}}
+    asyncio.run(
+        graph.aupdate_state(config, {"leads": leads, "user_id": "u_1"}, as_node="scout_report")
+    )
+    return deps, graph, config
+
+
+def test_the_run_pauses_for_approval_then_resumes_with_approve_edit_and_reject(
+    client: AsyncQdrantClient,
+) -> None:
+    from partner_agents.graph.build import resume_turn
+    from partner_agents.schemas import ApprovalDecision, EmailDraft
+
+    deps, graph, _ = seeded_approval(client)
+
+    async def go() -> Any:
+        paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="email the top 3")
+        ids = {d["lead_id"]: d["id"] for d in paused.pending_approval["drafts"]}
+        decision = ApprovalDecision(
+            approve=[ids["acme"]],
+            reject=[ids["gamma"]],
+            edits={ids["beta"]: EmailDraft(subject="Edited", body="My own words. Priya Shah")},
+        )
+        done = await resume_turn(graph, deps, thread_id="t_1", user_id="u_1", decision=decision)
+        return paused, done
+
+    paused, done = asyncio.run(go())
+
+    # Paused: three drafts wait, nothing is decided, and the run record is already saved.
+    assert paused.pending_approval is not None
+    assert [d["status"] for d in paused.pending_approval["drafts"]] == ["pending_approval"] * 3
+    assert paused.reply.startswith("I drafted 3 emails for approval:")
+
+    # Resumed: two approved (one with the edited content), one rejected.
+    by_lead = {d.lead_id: d for d in done.state["drafts"]}
+    assert by_lead["acme"].status == "approved" and by_lead["acme"].subject == "Hello"
+    assert by_lead["beta"].status == "approved" and by_lead["beta"].subject == "Edited"
+    assert (
+        by_lead["beta"].body.startswith("My own words.") and "unsubscribe" in by_lead["beta"].body
+    )
+    assert by_lead["gamma"].status == "rejected"
+    assert done.pending_approval is None and done.reply == "Approved 2, rejected 1."
+
+    saved = {d.lead_id: d.status for d in asyncio.run(deps.repo.list_drafts("u_1"))}
+    assert saved == {"acme": "approved", "beta": "approved", "gamma": "rejected"}
+    assert done.run.run_id == paused.run.run_id  # one run, finished after the resume
+    assert done.run.finished_at is not None and paused.run.finished_at is not None
+    assert done.run.finished_at >= paused.run.finished_at
+
+
+def test_an_edit_that_breaks_the_policy_pauses_again(client: AsyncQdrantClient) -> None:
+    from partner_agents.graph.build import resume_turn
+    from partner_agents.schemas import ApprovalDecision, EmailDraft
+
+    deps, graph, _ = seeded_approval(client)
+
+    async def go() -> Any:
+        paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="email the top 3")
+        ids = [d["id"] for d in paused.pending_approval["drafts"]]
+        bad = EmailDraft(subject="s", body="No sender name here.")
+        second = await resume_turn(
+            graph, deps, thread_id="t_1", user_id="u_1",
+            decision=ApprovalDecision(approve=ids[:2], edits={ids[2]: bad}),
+        )  # fmt: skip
+        third = await resume_turn(
+            graph, deps, thread_id="t_1", user_id="u_1",
+            decision=ApprovalDecision(approve=[ids[2]]),
+        )  # fmt: skip
+        return second, third
+
+    second, third = asyncio.run(go())
+    assert second.pending_approval is not None
+    assert [d["lead_id"] for d in second.pending_approval["drafts"]] == ["gamma"]
+    assert second.pending_approval["problems"] == {
+        second.pending_approval["drafts"][0]["id"]: ["missing_sender"]
+    }
+    assert [d.status for d in third.state["drafts"]] == ["approved"] * 3
+    assert third.pending_approval is None
+
+
+def test_resume_needs_a_waiting_approval_for_the_same_user(client: AsyncQdrantClient) -> None:
+    from partner_agents.graph.build import NothingToApprove, resume_turn
+    from partner_agents.schemas import ApprovalDecision
+
+    deps, graph, _ = seeded_approval(client)
+
+    async def go(thread: str, user: str) -> None:
+        await resume_turn(graph, deps, thread_id=thread, user_id=user, decision=ApprovalDecision())
+
+    with pytest.raises(NothingToApprove):  # nothing was drafted in this thread yet
+        asyncio.run(go("t_1", "u_1"))
+
+    asyncio.run(run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="email the top 3"))
+    with pytest.raises(NothingToApprove):  # someone else's thread
+        asyncio.run(go("t_1", "u_2"))
+    with pytest.raises(NothingToApprove):  # unknown thread
+        asyncio.run(go("t_nope", "u_1"))
+
+
 # --- the other branches -------------------------------------------------------------
 
 
