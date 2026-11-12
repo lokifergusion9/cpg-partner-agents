@@ -150,6 +150,7 @@ class Settings(BaseSettings):
     qdrant_api_key: SecretStr | None = None
     qdrant_local_path: str = "./.qdrant"
     mongodb_uri: SecretStr | None = None
+    mongodb_database: str = Field("partner_agents", min_length=1)
 
     # Retrieval
     chunk_tokens: int = Field(1000, ge=50)

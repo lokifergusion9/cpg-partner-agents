@@ -26,6 +26,8 @@ dependencies = [
     "fastapi>=0.162.5",
     "uvicorn[standard]>=0.54.0",
     "gradio>=6.31.0",
+    "pymongo>=4.19.0",
+    "langgraph-checkpoint-mongodb>=0.5.1",
 ]
 
 [dependency-groups]

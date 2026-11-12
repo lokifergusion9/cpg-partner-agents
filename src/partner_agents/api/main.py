@@ -30,6 +30,9 @@ def create_app(
             active = settings or get_settings()
             configure_logging(active)
             owned = build_app_deps(active)
+        ensure_indexes = getattr(owned.repo, "ensure_indexes", None)
+        if ensure_indexes is not None:  # MongoDB: indexes and TTLs (HLD §8.1)
+            await ensure_indexes()
         if owned.rate_limiter is None:
             owned.rate_limiter = RateLimiter(owned.settings.rate_limit_runs_per_hour)
         app.state.ctx = Context(deps=owned, graph=build_graph(owned))

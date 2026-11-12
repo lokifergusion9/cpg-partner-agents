@@ -247,6 +247,16 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
 
+## ADR-028: PyMongo's async client and the official LangGraph MongoDB saver
+- **Status:** Accepted · 2026-11-12
+- **Context:** T-27 needs a `MongoRepository` for the `Repository` protocol (HLD §8.1) and a durable checkpointer, so that a conversation that waits for approval survives a restart of the single-worker Space. Atlas M0 is the free tier we already chose (ADR-005).
+- **Decision:** Use `pymongo` and its native asyncio client (`AsyncMongoClient`, `tz_aware=True`). For checkpoints use `langgraph-checkpoint-mongodb` (`MongoDBSaver`: a synchronous `MongoClient` with async `aput`/`aget_tuple`/`alist` methods in the installed 0.5.1), built with our allowlisted serializer and `ttl=DATA_TTL_DAYS` (`graph/build.checkpoint_serde()`). With no `MONGODB_URI` nothing changes: the in-memory repository and `InMemorySaver` stay the default, and the whole offline suite runs without either package being used.
+- **Alternatives:**
+  - `motor`: deprecated by MongoDB in favour of PyMongo's async client.
+  - Our own `BaseCheckpointSaver`: about a dozen methods with subtle ordering and write-ahead rules; a bug there loses a paused approval.
+  - Keep checkpoints in memory in production: a restart would drop every pending approval.
+- **Consequences:** Two new dependencies. The saver package brings `langchain-mongodb`, `langchain`, `langchain-classic`, `sqlalchemy` and a few small packages along, so the image grows (T-42 should check the size). Mongo stores datetimes with millisecond precision; the repository returns timezone-aware values. The shared contract suite runs against `MongoRepository` offline on a small fake collection (logic) and with `-m live` against a real server (behaviour).
+
 ## ADR-027: google-auth-oauthlib for the Gmail OAuth flow, httpx for the Gmail API
 - **Status:** Accepted · 2026-11-12
 - **Context:** `gmail_draft` and `gmail_send` (HLD §6.9, T-25) need a user OAuth token for the `gmail.compose` scope, obtained once through the installed-app (loopback) flow and refreshed afterwards. The token file must live outside the repo. We only call two endpoints: `users.drafts.create` and `users.messages.send`.

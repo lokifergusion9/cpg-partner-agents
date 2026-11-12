@@ -624,7 +624,7 @@ Gradio's analytics and version check to `api.gradio.app` are off (`GRADIO_ANALYT
 | Collection | Key fields | Indexes / TTL |
 |---|---|---|
 | `leads` | `Lead` | `{user_id, run_id}`, `{user_id, email}` |
-| `outreach` | `OutreachDraft` | `{user_id, recipient, created_at}` (dedupe), `{user_id, status}` |
+| `outreach` | `OutreachDraft` | `{user_id, recipient_key, created_at}` (dedupe; `recipient_key` is the recipient trimmed and lower-cased), `{user_id, status}` |
 | `runs` | `RunRecord` | `{run_id}` unique, `{user_id, started_at}` |
 | `pages` | `{run_id, url, text, contact_text, fetched_at}` | TTL on `fetched_at` = `DATA_TTL_DAYS` |
 | `search_cache` | `{query_key, hits, created_at}` | TTL 24 h |
@@ -645,7 +645,11 @@ All methods are `async`. Reads are scoped by `user_id` where the data is per-use
 | search cache | `get_cached_search(query_key)` (`None` when missing or older than 24 h, `[]` is a valid cached result), `put_cached_search(query_key, hits)` (restarts the TTL) |
 | profiles | `save_profile(user_id, profile)`, `get_profile(user_id)` |
 
-Expiry is decided at read time against an injectable clock, because a Mongo TTL index only sweeps about once a minute. The `calls` group arrives with T-58. All stored timestamps are timezone-aware.
+Expiry is decided at read time against an injectable clock, because a Mongo TTL index only sweeps about once a minute.
+
+**`MongoRepository` (`storage/mongo.py`, ADR-028).** Built from `MONGODB_URI` and `MONGODB_DATABASE` by `build_repository(settings)` (no URI means `InMemoryRepository`); the app calls `ensure_indexes()` at startup, which creates the indexes above and the two TTL indexes (`pages.fetched_at` = `DATA_TTL_DAYS`, `search_cache.created_at` = 24 h; if `DATA_TTL_DAYS` changed it updates the index with `collMod` instead of failing). A model is stored as its JSON form plus real BSON datetimes for `created_at`, `started_at` and `fetched_at`; the natural id is the `_id` (so saving an existing id replaces it); `_seq` (a nanosecond counter) keeps equal timestamps in save order. The client uses `tz_aware=True`, so values come back timezone-aware. MongoDB keeps milliseconds, so microseconds are dropped. Expiry is still decided at read time with the injected clock; the TTL index only cleans up. The same `RepositoryContract` runs offline on a small fake collection (`tests/storage/fake_mongo.py`: logic) and with `pytest -m live` against a real server (`MONGODB_URI`; it creates and drops a throwaway database).
+
+**Checkpoints.** With `MONGODB_URI` set, `build_checkpointer()` returns `langgraph.checkpoint.mongodb.MongoDBSaver` on a synchronous `MongoClient`, with `serde=checkpoint_serde()` and `ttl=DATA_TTL_DAYS` in seconds, and `build_graph` uses it instead of `InMemorySaver`. Without a URI a restart loses the conversations that wait for approval. The `calls` group arrives with T-58. All stored timestamps are timezone-aware.
 
 ### 8.2 Qdrant (Cloud free tier; local mode when `QDRANT_URL` is empty)
 
@@ -705,6 +709,7 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `QDRANT_URL` / `QDRANT_API_KEY` | empty → local mode | |
 | `QDRANT_LOCAL_PATH` | `./.qdrant` | on-disk path for local mode |
 | `MONGODB_URI` | empty → in-memory | |
+| `MONGODB_DATABASE` | `partner_agents` | database name inside the cluster |
 | `CHUNK_TOKENS` / `CHUNK_OVERLAP` | `1000` / `150` | |
 | `EVIDENCE_K` / `EVIDENCE_MAX` | `4` / `6` | |
 | `ROUTER_MIN_CONFIDENCE` / `KB_MIN_SCORE` | `0.6` / `0.5` (start; tuned on the kb dev split) | |

@@ -1,8 +1,8 @@
 """The main graph (HLD §5) and one user turn through it (§6.10).
 
-``build_graph`` wires Charlie's router to its five branches. The graph is compiled with a
-checkpointer keyed by ``thread_id`` (``InMemorySaver`` by default; the MongoDB saver arrives
-with T-27), so a follow-up in the same thread sees the earlier messages and leads.
+``build_graph`` wires Charlie's router to its branches. The graph is compiled with a
+checkpointer keyed by ``thread_id`` (``InMemorySaver`` by default, the MongoDB saver when
+``MONGODB_URI`` is set), so a follow-up in the same thread sees the earlier messages and leads.
 
 ``run_turn`` runs one user message: a new ``run_id``, the thread's history trimmed to the
 last ``MAX_MESSAGES`` messages, and a ``RunRecord`` (timings of every node that ran, errors,
@@ -45,7 +45,8 @@ from partner_agents.prompts import scout as scout_prompts
 from partner_agents.retrieval.embeddings import SentenceTransformerEmbedder
 from partner_agents.retrieval.store import KnowledgeStore, VectorStore, make_client
 from partner_agents.schemas import ApprovalDecision, RunRecord, StageError
-from partner_agents.storage.repo import InMemoryRepository, Repository
+from partner_agents.storage.mongo import build_repository
+from partner_agents.storage.repo import Repository
 from partner_agents.web.fetch import Fetcher
 from partner_agents.web.search import SearchService, build_providers
 
@@ -78,6 +79,8 @@ class AppDeps:
     outreach_buckets: dict[str, TokenBucket] = field(default_factory=dict)
     # Only the gmail_draft and gmail_send modes use it; outbox needs no client.
     gmail: GmailClient | None = None
+    # A durable saver (MongoDB) when MONGODB_URI is set; otherwise build_graph uses InMemorySaver.
+    checkpointer: BaseCheckpointSaver[Any] | None = None
     # The mock caller dials nobody. A live provider has no caller yet (stretch), so it fails.
     voice: VoiceCaller | None = None
     # Limits discovery runs per key. The API sets one; the CLI and tests run without.
@@ -86,12 +89,18 @@ class AppDeps:
     async def aclose(self) -> None:
         await self.scout.fetcher.aclose()
         await self.scout.store.close()  # the knowledge store shares this Qdrant client
+        close_repo = getattr(self.repo, "aclose", None)
+        if close_repo is not None:
+            await close_repo()
+        saver_client = getattr(self.checkpointer, "client", None)
+        if saver_client is not None:
+            saver_client.close()
 
 
 def build_app_deps(settings: Settings) -> AppDeps:
     """Real dependencies from settings. One Qdrant client serves both collections, because
     the local on-disk store allows only one client per folder."""
-    repo = InMemoryRepository()  # MongoRepository arrives with T-27
+    repo = build_repository(settings)  # MongoDB with MONGODB_URI, else in memory
     embedder = SentenceTransformerEmbedder(settings.embedding_model)
     client = make_client(settings)
     scout = ScoutDeps(
@@ -111,6 +120,27 @@ def build_app_deps(settings: Settings) -> AppDeps:
         writer=get_chat_model("writer", settings=settings),
         gmail=HttpxGmailClient(settings) if settings.outreach_mode != "outbox" else None,
         voice=MockVoiceCaller() if settings.voice_provider == "mock" else None,
+        checkpointer=build_checkpointer(settings),
+    )
+
+
+def build_checkpointer(settings: Settings) -> BaseCheckpointSaver[Any] | None:
+    """The MongoDB saver when ``MONGODB_URI`` is set (ADR-028), else ``None`` (in memory).
+
+    It uses the same allowlisted serializer as the default saver, so a stored checkpoint
+    cannot revive an arbitrary class. Checkpoints expire with ``DATA_TTL_DAYS``.
+    """
+    if settings.mongodb_uri is None:
+        return None
+    from langgraph.checkpoint.mongodb import MongoDBSaver
+    from pymongo import MongoClient
+
+    client: Any = MongoClient(settings.mongodb_uri.get_secret_value(), tz_aware=True)
+    return MongoDBSaver(
+        client,
+        db_name=settings.mongodb_database,
+        serde=checkpoint_serde(),
+        ttl=settings.data_ttl_days * 86400,
     )
 
 
@@ -165,7 +195,8 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
     graph.add_edge("approval_gate", "chase_dispatch")
     for name in ("kb_answer", "ask_clarification", "refuse", "chase_dispatch"):
         graph.add_edge(name, END)
-    return graph.compile(checkpointer=checkpointer or InMemorySaver(serde=checkpoint_serde()))
+    saver = checkpointer or deps.checkpointer or InMemorySaver(serde=checkpoint_serde())
+    return graph.compile(checkpointer=saver)
 
 
 @dataclass
