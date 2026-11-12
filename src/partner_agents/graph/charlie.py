@@ -37,7 +37,7 @@ NEXT_NODE: dict[Intent, str] = {
     "cpg_qa": "kb_answer",
     "clarify": "ask_clarification",
     "out_of_scope": "refuse",
-    "discovery": "scout_search",
+    "discovery": "rate_gate",  # then scout_search (graph/rate_gate.py)
     "outreach": "chase_select",
 }
 

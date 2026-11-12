@@ -59,21 +59,26 @@ def is_duplicate(
 
 
 class TokenBucket(BaseModel):
-    """Per-user daily send budget: ``capacity`` tokens, refilled evenly over 24 hours."""
+    """A token bucket: ``capacity`` tokens, refilled evenly over ``period_s`` (24 h by default).
+
+    Frozen and pure: ``take`` returns the new bucket. The outreach policy uses it for the daily
+    send cap and ``api/ratelimit.py`` for the hourly discovery limit.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     capacity: int
     tokens: float
     updated_at: datetime
+    period_s: float = DAY_S
 
     @classmethod
-    def full(cls, capacity: int, now: datetime) -> "TokenBucket":
-        return cls(capacity=capacity, tokens=float(capacity), updated_at=now)
+    def full(cls, capacity: int, now: datetime, period_s: float = DAY_S) -> "TokenBucket":
+        return cls(capacity=capacity, tokens=float(capacity), updated_at=now, period_s=period_s)
 
     def refilled(self, now: datetime) -> "TokenBucket":
         elapsed = max(0.0, (now - self.updated_at).total_seconds())
-        tokens = min(float(self.capacity), self.tokens + elapsed * self.capacity / DAY_S)
+        tokens = min(float(self.capacity), self.tokens + elapsed * self.capacity / self.period_s)
         return self.model_copy(update={"tokens": tokens, "updated_at": max(now, self.updated_at)})
 
     def take(self, now: datetime) -> tuple[bool, "TokenBucket"]:
@@ -82,6 +87,15 @@ class TokenBucket(BaseModel):
         if bucket.tokens < 1:
             return False, bucket
         return True, bucket.model_copy(update={"tokens": bucket.tokens - 1})
+
+    def wait_s(self, now: datetime) -> float:
+        """Seconds until one token is available (0 if there is one now, inf if capacity is 0)."""
+        tokens = self.refilled(now).tokens
+        if tokens >= 1:
+            return 0.0
+        if self.capacity <= 0:
+            return float("inf")
+        return (1 - tokens) * self.period_s / self.capacity
 
 
 def check_lead(

@@ -277,7 +277,7 @@ START
 charlie_route ─┬─ cpg_qa ────────► kb_answer ─────────────────────────────────────────────► END
                ├─ clarify ───────► ask_clarification ─────────────────────────────────────► END
                ├─ out_of_scope ──► refuse ────────────────────────────────────────────────► END
-               ├─ discovery ─────► scout_search ─► scout_fetch ─► scout_index ─► scout_evidence
+               ├─ discovery ─────► rate_gate ─► scout_search ─► scout_fetch ─► scout_index ─► scout_evidence
                │                     ─► scout_extract ─► scout_verify ─► scout_report ────► END
                └─ outreach ──────► chase_select ─┬─ email ─► chase_draft ─┬─► approval_gate ⏸ ─► chase_dispatch ─► END
                                                  └─ voice ─► call_plan ───┘     (interrupt)
@@ -297,6 +297,8 @@ class AgentState(TypedDict, total=False):
     user_id: str
     thread_id: str
     run_id: str                       # new per user turn
+    rate_keys: list[str]              # who this turn counts against, set per turn
+    retry_after_s: int | None         # set by rate_gate when the turn was refused; reset per turn
     route: RouteDecision
     search_hits: list[SearchHit]
     pages: list[PageRef]              # refs only; bodies in repo.pages
@@ -320,6 +322,7 @@ class AgentState(TypedDict, total=False):
 | `kb_answer` | route → AI message | §6.2 |
 | `ask_clarification` | route → AI message | uses `route.clarifying_question` |
 | `refuse` | → AI message | fixed template listing capabilities |
+| `rate_gate` | route + `rate_keys` → pass, or reply + `retry_after_s` | §7; counts discovery runs only |
 | `scout_search` | `route.discovery` → `search_hits` | §6.3 |
 | `scout_fetch` | hits → `pages` (+ bodies to repo) | §6.4 |
 | `scout_index` | pages → chunks in Qdrant | §6.5 |
@@ -593,6 +596,8 @@ All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` an
 {"call_id": "c_77", "stage": "qualification", "reply": "Got it, Northern California. Which key accounts do you work with there?",
  "checks": [{"rule_id": "C-ONEQ", "passed": true, "by": "code"}], "ended": false, "outcome": null}
 ```
+
+**Rate limit (`api/ratelimit.py`, `graph/rate_gate.py`).** `RATE_LIMIT_RUNS_PER_HOUR` (default 5) discovery runs per hour, per user **and** per client IP (`request.client.host`; behind a proxy start uvicorn with `--proxy-headers` and `--forwarded-allow-ips`). The `rate_gate` node sits between `charlie_route` and `scout_search`, so only discovery turns count; questions, drafting and approvals are free. A run is allowed only if every key (`user:<id>`, `ip:<addr>`) has a token; then one token is taken from each, and a refused run spends none. The bucket is the same pure `TokenBucket` as the outreach cap (`period_s` = 3600). A refusal ends the turn with a reply and `retry_after_s` in the state; the API returns 429 `rate_limited` with `retry_after_s` in the body and a `Retry-After` header. Buckets live in process memory (one worker, ADR-010); idle full buckets are dropped past 10 000 keys.
 
 **Thread rules.** A thread belongs to the `user_id` that created it; another user gets 404 `thread_not_found`, as if it did not exist. While a thread waits for approval, `POST /chat` returns 409 `approval_pending` (decide on the drafts first). Turns of one thread are serialised by a per-thread lock. Validation errors (422 `invalid_request`) name the field and the rule, never the value. An unexpected exception is a generic 500 `internal_error`; the details go to the log only.
 

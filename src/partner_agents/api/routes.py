@@ -133,7 +133,7 @@ async def _thread_state(ctx: Context, thread_id: str, user_id: str) -> Any:
 
 
 @router.post("/chat")
-async def chat(body: ChatRequest, ctx: Ctx) -> ChatResponse:
+async def chat(body: ChatRequest, request: Request, ctx: Ctx) -> ChatResponse:
     thread_id = body.thread_id or f"t_{uuid.uuid4().hex[:12]}"
     async with ctx.lock(thread_id):
         snapshot = await _thread_state(ctx, thread_id, body.user_id)
@@ -143,9 +143,18 @@ async def chat(body: ChatRequest, ctx: Ctx) -> ChatResponse:
                 "approval_pending",
                 "Approve or reject the pending drafts before sending another message.",
             )
+        client = request.client.host if request.client else "unknown"
         result = await run_turn(
-            ctx.graph, ctx.deps, thread_id=thread_id, user_id=body.user_id, text=body.message
+            ctx.graph,
+            ctx.deps,
+            thread_id=thread_id,
+            user_id=body.user_id,
+            text=body.message,
+            rate_keys=[f"user:{body.user_id}", f"ip:{client}"],
         )
+    retry_after = result.state.get("retry_after_s")
+    if retry_after:  # rate_gate refused this discovery run
+        raise ApiError(429, "rate_limited", result.reply, retry_after_s=retry_after)
     return chat_response(thread_id, result)
 
 

@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from partner_agents.api.errors import install_error_handlers
+from partner_agents.api.ratelimit import RateLimiter
 from partner_agents.api.routes import Context, open_router, router
 from partner_agents.config import Settings, get_settings
 from partner_agents.graph.build import AppDeps, build_app_deps, build_graph
@@ -24,6 +25,8 @@ def create_app(deps: AppDeps | None = None, settings: Settings | None = None) ->
             active = settings or get_settings()
             configure_logging(active)
             owned = build_app_deps(active)
+        if owned.rate_limiter is None:
+            owned.rate_limiter = RateLimiter(owned.settings.rate_limit_runs_per_hour)
         app.state.ctx = Context(deps=owned, graph=build_graph(owned))
         try:
             yield

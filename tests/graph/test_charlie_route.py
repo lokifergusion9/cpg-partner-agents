@@ -52,7 +52,7 @@ def route(
 # --- the five branches --------------------------------------------------------------
 
 BRANCHES = [
-    (decision("discovery", discovery=discovery()), "scout_search"),
+    (decision("discovery", discovery=discovery()), "rate_gate"),
     (decision("cpg_qa"), "kb_answer"),
     (decision("outreach", lead_selector="top 3"), "chase_select"),
     (decision("clarify", clarifying_question="Which products?"), "ask_clarification"),

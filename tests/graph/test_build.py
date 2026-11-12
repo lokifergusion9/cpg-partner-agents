@@ -193,7 +193,7 @@ def test_each_turn_gets_its_own_run_record_with_the_timings_of_the_nodes_that_ra
     _, (first, second) = turns(deps, "find cookie brokers in California", "only the ones in LA")
 
     assert first.run.run_id != second.run.run_id
-    assert set(first.run.timings_ms) == {"charlie_route", *SCOUT_NODES}
+    assert set(first.run.timings_ms) == {"charlie_route", "rate_gate", *SCOUT_NODES}
     assert set(second.run.timings_ms) == {"charlie_route", "chase_select"}
     assert (first.run.intent, second.run.intent) == ("discovery", "outreach")
     assert first.run.prompt_versions.keys() == {"charlie", "scout"}

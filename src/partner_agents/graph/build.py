@@ -10,7 +10,7 @@ tokens and providers per role, prompt versions) saved at the end.
 """
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -28,7 +28,8 @@ from pydantic import BaseModel
 
 from partner_agents import schemas
 from partner_agents.config import Settings
-from partner_agents.graph import approval, call_plan, charlie, chase, dispatch
+from partner_agents.graph import approval, call_plan, charlie, chase, dispatch, rate_gate
+from partner_agents.graph.rate_gate import RunLimiter
 from partner_agents.graph.scout import ScoutDeps, add_scout_nodes
 from partner_agents.graph.state import AgentState
 from partner_agents.llm import get_chat_model, track_providers, track_usage
@@ -77,6 +78,8 @@ class AppDeps:
     gmail: GmailClient | None = None
     # The mock caller dials nobody. A live provider has no caller yet (stretch), so it fails.
     voice: VoiceCaller | None = None
+    # Limits discovery runs per key. The API sets one; the CLI and tests run without.
+    rate_limiter: RunLimiter | None = None
 
     async def aclose(self) -> None:
         await self.scout.fetcher.aclose()
@@ -138,6 +141,7 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
             deps.writer, deps.repo, deps.settings, deps.outreach_buckets, deps.clock
         ),
         "approval_gate": approval.make_approval_gate(deps.repo, deps.clock),
+        "rate_gate": rate_gate.make_rate_gate(deps.rate_limiter),
         "call_plan": call_plan.make_call_plan(deps.repo, deps.settings, deps.clock),
         "chase_dispatch": dispatch.make_chase_dispatch(
             deps.repo, deps.settings, deps.gmail, deps.voice, deps.clock
@@ -150,6 +154,7 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
     graph.add_conditional_edges(
         "charlie_route", charlie.next_after_route, list(charlie.NEXT_NODE.values())
     )
+    graph.add_conditional_edges("rate_gate", rate_gate.next_after_gate, ["scout_search", END])
     graph.add_conditional_edges(
         "chase_select", chase.next_after_select, ["chase_draft", "call_plan", END]
     )
@@ -214,11 +219,18 @@ async def _result(graph: Graph, config: RunnableConfig, run: RunRecord) -> TurnR
 
 
 async def run_turn(
-    graph: Graph, deps: AppDeps, *, thread_id: str, user_id: str, text: str
+    graph: Graph,
+    deps: AppDeps,
+    *,
+    thread_id: str,
+    user_id: str,
+    text: str,
+    rate_keys: Sequence[str] | None = None,
 ) -> TurnResult:
     """Run one user message through the graph in ``thread_id`` and persist its ``RunRecord``.
 
     If the turn ends at the approval gate, ``TurnResult.pending_approval`` holds the drafts.
+    ``rate_keys`` name who a discovery run counts against (default: the user).
     """
     run_id = new_run_id()
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
@@ -230,6 +242,8 @@ async def run_turn(
         "user_id": user_id,
         "thread_id": thread_id,
         "run_id": run_id,
+        "rate_keys": list(rate_keys or [f"user:{user_id}"]),
+        "retry_after_s": None,  # a refusal in an earlier turn must not stick
     }
     started = deps.clock()
     seen = await _drive(graph, config, turn_input, run_id)

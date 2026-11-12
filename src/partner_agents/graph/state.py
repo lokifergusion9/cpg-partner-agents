@@ -32,6 +32,8 @@ class AgentState(TypedDict, total=False):
     user_id: str
     thread_id: str
     run_id: str  # new per user turn
+    rate_keys: list[str]  # who this turn counts against ("user:<id>", "ip:<addr>"), set per turn
+    retry_after_s: int | None  # set by rate_gate when the turn was refused; reset per turn
     route: RouteDecision
     search_hits: list[SearchHit]
     pages: list[PageRef]  # refs only; bodies in repo.pages
