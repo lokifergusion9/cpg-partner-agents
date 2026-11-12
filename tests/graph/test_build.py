@@ -264,7 +264,9 @@ def test_an_outreach_turn_drafts_emails_for_the_selected_leads(client: AsyncQdra
 # --- approval gate (T-24) -----------------------------------------------------------
 
 
-def seeded_approval(client: AsyncQdrantClient) -> tuple[AppDeps, Graph, Any]:
+def seeded_approval(
+    client: AsyncQdrantClient, settings: Settings | None = None, gmail: Any = None
+) -> tuple[AppDeps, Graph, Any]:
     """A thread that already holds three verified leads and a brand profile."""
     from datetime import UTC, datetime
 
@@ -276,6 +278,9 @@ def seeded_approval(client: AsyncQdrantClient) -> tuple[AppDeps, Graph, Any]:
         reason="email",
     )  # fmt: skip
     deps = make_deps(client, top3)
+    if settings is not None:
+        deps.settings = settings
+    deps.gmail = gmail
     keys = ("acme", "beta", "gamma")
     deps.writer = ByPageModel(
         messages=iter([]), pages={f"https://{k}.example/": [reply] for k in keys}
@@ -348,21 +353,73 @@ def test_the_run_pauses_for_approval_then_resumes_with_approve_edit_and_reject(
     assert [d["status"] for d in paused.pending_approval["drafts"]] == ["pending_approval"] * 3
     assert paused.reply.startswith("I drafted 3 emails for approval:")
 
-    # Resumed: two approved (one with the edited content), one rejected.
+    # Resumed: two approved and dispatched (one with the edited content), one rejected.
     by_lead = {d.lead_id: d for d in done.state["drafts"]}
-    assert by_lead["acme"].status == "approved" and by_lead["acme"].subject == "Hello"
-    assert by_lead["beta"].status == "approved" and by_lead["beta"].subject == "Edited"
+    assert by_lead["acme"].status == "outboxed" and by_lead["acme"].subject == "Hello"
+    assert by_lead["beta"].status == "outboxed" and by_lead["beta"].subject == "Edited"
     assert (
         by_lead["beta"].body.startswith("My own words.") and "unsubscribe" in by_lead["beta"].body
     )
     assert by_lead["gamma"].status == "rejected"
-    assert done.pending_approval is None and done.reply == "Approved 2, rejected 1."
+    assert done.pending_approval is None and done.reply.startswith(
+        "Dispatch: 2 saved to the outbox"
+    )
 
     saved = {d.lead_id: d.status for d in asyncio.run(deps.repo.list_drafts("u_1"))}
-    assert saved == {"acme": "approved", "beta": "approved", "gamma": "rejected"}
+    assert saved == {"acme": "outboxed", "beta": "outboxed", "gamma": "rejected"}
     assert done.run.run_id == paused.run.run_id  # one run, finished after the resume
     assert done.run.finished_at is not None and paused.run.finished_at is not None
     assert done.run.finished_at >= paused.run.finished_at
+
+
+def test_only_approved_drafts_reach_gmail_in_gmail_draft_mode(client: AsyncQdrantClient) -> None:
+    from partner_agents.graph.build import resume_turn
+    from partner_agents.schemas import ApprovalDecision
+    from tests.outreach.test_email import FakeGmail
+
+    gmail = FakeGmail()
+    settings = Settings(_env_file=None, outreach_mode="gmail_draft")  # type: ignore[call-arg]
+    deps, graph, _ = seeded_approval(client, settings, gmail)
+
+    async def go() -> Any:
+        paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="email the top 3")
+        ids = {d["lead_id"]: d["id"] for d in paused.pending_approval["drafts"]}
+        decision = ApprovalDecision(approve=[ids["acme"]], reject=[ids["beta"], ids["gamma"]])
+        return await resume_turn(graph, deps, thread_id="t_1", user_id="u_1", decision=decision)
+
+    done = asyncio.run(go())
+    assert {d.lead_id: d.status for d in done.state["drafts"]} == {
+        "acme": "drafted_in_gmail",
+        "beta": "rejected",
+        "gamma": "rejected",
+    }
+    assert len(gmail.drafts) == 1 and gmail.sent == []  # one draft, nothing sent
+    assert done.reply.startswith("Dispatch: 1 created as drafts in your Gmail")
+    assert "chase_dispatch" in done.run.timings_ms
+    assert not done.run.errors
+
+
+def test_a_dispatch_failure_marks_the_draft_failed_and_the_run_keeps_the_error(
+    client: AsyncQdrantClient,
+) -> None:
+    from partner_agents.graph.build import resume_turn
+    from partner_agents.schemas import ApprovalDecision
+    from tests.outreach.test_email import FakeGmail
+
+    gmail = FakeGmail(fail=RuntimeError("down"))
+    settings = Settings(_env_file=None, outreach_mode="gmail_draft")  # type: ignore[call-arg]
+    deps, graph, _ = seeded_approval(client, settings, gmail)
+
+    async def go() -> Any:
+        paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="email the top 3")
+        ids = [d["id"] for d in paused.pending_approval["drafts"]]
+        decision = ApprovalDecision(approve=ids[:1], reject=ids[1:])
+        return await resume_turn(graph, deps, thread_id="t_1", user_id="u_1", decision=decision)
+
+    done = asyncio.run(go())
+    assert [d.status for d in done.state["drafts"]] == ["failed", "rejected", "rejected"]
+    assert [(e.stage, e.code) for e in done.run.errors] == [("chase_dispatch", "gmail_error")]
+    assert "1 failed (gmail_error)" in done.reply
 
 
 def test_an_edit_that_breaks_the_policy_pauses_again(client: AsyncQdrantClient) -> None:
@@ -391,7 +448,7 @@ def test_an_edit_that_breaks_the_policy_pauses_again(client: AsyncQdrantClient) 
     assert second.pending_approval["problems"] == {
         second.pending_approval["drafts"][0]["id"]: ["missing_sender"]
     }
-    assert [d.status for d in third.state["drafts"]] == ["approved"] * 3
+    assert [d.status for d in third.state["drafts"]] == ["outboxed"] * 3
     assert third.pending_approval is None
 
 

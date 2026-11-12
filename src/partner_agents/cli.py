@@ -25,6 +25,7 @@ from partner_agents.graph.scout import ScoutDeps, build_scout_graph
 from partner_agents.graph.state import AgentState
 from partner_agents.llm import get_chat_model, track_providers, track_usage
 from partner_agents.observability import configure_logging, run_context
+from partner_agents.outreach.email import authorize
 from partner_agents.retrieval.embeddings import SentenceTransformerEmbedder
 from partner_agents.retrieval.store import VectorStore, make_client
 from partner_agents.schemas import (
@@ -242,6 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     ask = commands.add_parser("ask", help="one message through Charlie's router and its branch")
     ask.add_argument("message", help='for example "what is a slotting fee?"')
+    commands.add_parser("gmail-auth", help="authorise Gmail drafts once (opens a browser)")
     scout = commands.add_parser("scout", help="find partners and verify their contacts")
     scout.add_argument("query", help='for example "cookie brokers in California"')
     scout.add_argument("--max-results", type=int, default=10, choices=range(1, 26), metavar="1-25")
@@ -255,6 +257,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = get_settings()
     configure_logging(settings)
+    if args.command == "gmail-auth":
+        print(f"Gmail authorised. Token saved to {authorize(settings)}")
+        return 0
     command = _ask if args.command == "ask" else _scout
     print(asyncio.run(command(args, settings)))
     return 0

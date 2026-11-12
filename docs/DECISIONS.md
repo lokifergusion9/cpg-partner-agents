@@ -247,6 +247,16 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
 
+## ADR-027: google-auth-oauthlib for the Gmail OAuth flow, httpx for the Gmail API
+- **Status:** Accepted · 2026-11-12
+- **Context:** `gmail_draft` and `gmail_send` (HLD §6.9, T-25) need a user OAuth token for the `gmail.compose` scope, obtained once through the installed-app (loopback) flow and refreshed afterwards. The token file must live outside the repo. We only call two endpoints: `users.drafts.create` and `users.messages.send`.
+- **Decision:** Add `google-auth-oauthlib` (the installed-app flow) and declare `google-auth` as a direct dependency (it is already installed through `langchain-google-genai`; `Credentials` handles the refresh). The two Gmail calls are plain `httpx` requests with a bearer token. Tests use a fake `GmailClient`; nothing in the offline suite touches Google.
+- **Alternatives:**
+  - `google-api-python-client`: large, synchronous, and loads a discovery document for two REST calls.
+  - Our own OAuth loopback and PKCE code: more code to get wrong in the part that handles credentials.
+  - Sending by SMTP with an app password: stores a long-lived password and bypasses the allowlist-by-API design.
+- **Consequences:** One small new dependency (`requests-oauthlib` comes with it). The authorisation step runs once per machine (`cli gmail-auth`) and needs a browser. Without credentials the system stays in `outbox`, which is the default.
+
 ## ADR-026: phonenumbers for phone parsing and E.164
 - **Status:** Accepted · 2026-11-04
 - **Context:** Scout must tell `(310) 555-0100`, `310.555.0100` and `+1 310 555 0100` apart from "a number that is not on the page", and store phones as E.164 (HLD §6.8). Phone formats differ by country, so regexes do not scale.
