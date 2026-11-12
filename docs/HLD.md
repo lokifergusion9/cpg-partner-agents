@@ -550,15 +550,16 @@ Soft rules (empathy, not pushy, answers the actual question) have `check="judge"
 
 ## 7. API (`api/`)
 
-All routes are under `/api`. JSON in and out. If `APP_API_KEY` is set, the `X-API-Key` header is required (not in demo mode, which uses a per-session anonymous `user_id` plus rate limits).
+All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` and `thread_id` match `[A-Za-z0-9_-]{1,64}`. `/health` is open and reports configuration only (no outbound call, no secret). The `/calls` routes arrive with the call agent (M6). If `APP_API_KEY` is set, the `X-API-Key` header is required (not in demo mode, which uses a per-session anonymous `user_id` plus rate limits).
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | POST | `/chat` | `{user_id, thread_id?, message}` | `ChatResponse` |
-| POST | `/chat/{thread_id}/approve` | `ApprovalDecision` | `ChatResponse` (after dispatch) |
+| POST | `/chat/{thread_id}/approve` | `?user_id` + `ApprovalDecision` | `ChatResponse` (after dispatch); 404 `nothing_to_approve` / `thread_not_found` |
 | GET | `/leads` | `?user_id&run_id?` | `list[Lead]` |
 | GET | `/outreach` | `?user_id&status?` | `list[OutreachDraft]` |
-| GET | `/runs/{run_id}` | | `RunRecord` |
+| GET | `/runs/{run_id}` | `?user_id` | `RunRecord` (404 `run_not_found` for another user's run) |
+| GET | `/profile` | `?user_id` | `BrandProfile` (404 `profile_not_found`) |
 | PUT | `/profile` | `BrandProfile` (+`user_id`) | `BrandProfile` |
 | POST | `/calls/{call_id}/start` | — | `CallTurnResponse` (the opening line) |
 | POST | `/calls/{call_id}/turn` | `{text}` | `CallTurnResponse` |
@@ -592,6 +593,8 @@ All routes are under `/api`. JSON in and out. If `APP_API_KEY` is set, the `X-AP
 {"call_id": "c_77", "stage": "qualification", "reply": "Got it, Northern California. Which key accounts do you work with there?",
  "checks": [{"rule_id": "C-ONEQ", "passed": true, "by": "code"}], "ended": false, "outcome": null}
 ```
+
+**Thread rules.** A thread belongs to the `user_id` that created it; another user gets 404 `thread_not_found`, as if it did not exist. While a thread waits for approval, `POST /chat` returns 409 `approval_pending` (decide on the drafts first). Turns of one thread are serialised by a per-thread lock. Validation errors (422 `invalid_request`) name the field and the rule, never the value. An unexpected exception is a generic 500 `internal_error`; the details go to the log only.
 
 **Streaming.** The UI uses `graph.astream(stream_mode="updates")` in-process to show stage progress. A server-sent-events endpoint is a stretch task (T-51).
 
