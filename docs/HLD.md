@@ -145,6 +145,9 @@ class BrandProfile(BaseModel):
     sign_off: str                          # closing line, e.g. "Thanks from all of us at …"
     approved_facts: list[ApprovedFact] = []
 
+class LeadSelection(BaseModel):            # LLM output: chase_select's fallback
+    numbers: list[int] = Field(default_factory=list, max_length=25)   # 1-based list positions
+
 class EmailDraft(BaseModel):               # LLM output
     subject: str = Field(max_length=80)
     body: str                              # ≤ 180 words, validated in outreach/policy.py
@@ -282,7 +285,7 @@ charlie_route ─┬─ cpg_qa ────────► kb_answer ───�
 
 The Scout nodes are added to the main graph directly (`graph/scout.add_scout_nodes`), not mounted as a compiled subgraph: a subgraph returns its whole state, and the `errors` reducer would count the parent's errors twice. `scout_search` clears `pages`, `evidence`, `candidates` and `leads` left by an earlier run in the thread.
 
-**Until T-23**, the outreach branch is `chase_select → END`: it resolves `route.lead_selector` deterministically (§6.9), writes `selected_leads` and replies with the matching leads. This is how a follow-up such as "only the ones in LA" works (PRD F5): the router returns `outreach` with that selector and no goal. T-23 adds the LLM fallback, the policy filter and drafting, and drafts only when the turn asks for outreach (a goal, or a drafting or call verb).
+`chase_select` resolves `route.lead_selector` (§6.9) and writes `selected_leads`. It goes on to `chase_draft` only when the turn asks for outreach (`route.outreach_goal` is set, or the message has a drafting or call verb such as draft, email, send, contact, pitch or call) **and** the channel is email. Otherwise it replies with the matching leads and ends the turn. This is how a follow-up such as "only the ones in LA" works (PRD F5): the router returns `outreach` with that selector and no goal. **Until T-24**, `chase_draft → END` (the drafts stay `pending_approval`). **Until T-26**, a voice request lists the leads, says calling is not set up yet, and ends.
 
 `chase_dispatch` for a voice draft does not talk to anyone. It creates a `CallRecord` and returns its `call_id`. The call itself runs in the call sub-graph (§6.11), one invocation per partner turn, with its own checkpoint thread (`call_id`).
 
@@ -324,8 +327,8 @@ class AgentState(TypedDict, total=False):
 | `scout_extract` | evidence → `candidates` | §6.7, one LLM call per page |
 | `scout_verify` | candidates + page bodies → `leads` | §6.8, deterministic |
 | `scout_report` | leads → AI message + persist leads | summary text, the table goes to the UI |
-| `chase_select` | route + thread leads → `selected_leads` | §6.9; until T-23 it also replies with the matching leads and ends the turn |
-| `chase_draft` | leads + brand profile → `drafts` | writer role, temp 0.7 |
+| `chase_select` | route + thread leads → `selected_leads` | §6.9; deterministic, writer-role fallback; replies and ends unless the turn asks for email outreach |
+| `chase_draft` | leads + brand profile → `drafts` | writer role, temp 0.7; policy first (§6.9) |
 | `call_plan` | lead + brand profile + playbook → voice `OutreachDraft` | deterministic: playbook id, mode, persona (simulate), the facts likely to be used |
 | `approval_gate` | drafts → `ApprovalDecision` | `interrupt()`; resumed through the API |
 | `chase_dispatch` | approved drafts → statuses (+ `CallRecord` for voice) | §6.9 |
@@ -454,14 +457,14 @@ The reasons for this design are in ADR-007. In short: a lead must be tied to one
 
 ### 6.9 Chase: outreach (`outreach/`)
 
-- **`chase_select`.** Resolves `route.lead_selector` against the thread's latest run (or the user's recent leads). Simple selectors are parsed deterministically by `graph/chase.resolve_selector`: "top N" / "first N", "lead N" / "#N", ordinals ("the first one", "the last one"), "all", and otherwise words matched against company name, location and partner type (with place shorthands such as LA → Los Angeles). Positions follow the numbering the router shows. `None` means "not understood", while an empty list means "understood, nothing matches"; for anything else, the writer model picks ids from a numbered list. The result is then filtered through `policy.eligible()`.
+- **`chase_select`.** Resolves `route.lead_selector` against the thread's latest run (or the user's recent leads). Simple selectors are parsed deterministically by `graph/chase.resolve_selector`: "top N" / "first N", "lead N" / "#N", ordinals ("the first one", "the last one"), "all", and otherwise words matched against company name, location and partner type (with place shorthands such as LA → Los Angeles). Positions follow the numbering the router shows. `None` means "not understood", while an empty list means "understood, nothing matches". When the selector is not understood, the writer model returns a `LeadSelection` (1-based numbers from a list of names, types and locations wrapped by `wrap_untrusted`, without contact values); out-of-range numbers are dropped. If that call fails, the node records a `StageError` and asks the user to rephrase. The policy runs in `chase_draft`, so a listing-only turn spends nothing.
 - **Policy (`policy.py`, pure functions).** Each check maps to a skip status:
   - The email must be verified, otherwise `skipped_ineligible`.
   - In `gmail_send` mode the recipient must be on `OUTREACH_ALLOWLIST` (case-insensitive exact address), otherwise `skipped_ineligible`.
   - No outreach to the same recipient within `OUTREACH_DEDUPE_DAYS`, otherwise `skipped_duplicate`. Only drafts that were or may still be delivered count (`pending_approval`, `approved`, `sent`, `drafted_in_gmail`, `outboxed`); rejected, failed and skipped drafts do not.
   - A per-user daily token bucket of `OUTREACH_DAILY_CAP`, otherwise `skipped_cap`. `TokenBucket` (frozen model: `capacity`, `tokens`, `updated_at`) refills evenly over 24 h and never above capacity; `take(now)` returns `(allowed, new_bucket)`. The checks run in the order above (`check_lead()`), and a token is spent only when every other check passes. The caller stores the returned bucket.
   - The body must be ≤ 180 words and contain the sender name and the opt-out line. If the body has no "unsubscribe" / "opt out" wording, `OPT_OUT_LINE` is appended before the word count. `enforce_body()` returns the fixed body plus its problems (`too_long`, `missing_sender`).
-- **`chase_draft`.** The writer role (temp 0.7) gets the `BrandProfile`, the user's goal and the lead fields, and returns an `EmailDraft`. The prompt forbids unverifiable claims and fake familiarity.
+- **`chase_draft`.** Loads the user's `BrandProfile` (`repo.get_profile`); without one it asks the user to set it up and drafts nothing. It runs `policy.check_lead()` over the selected leads **in order**, before any model call. The dedupe sees the repo's recent drafts plus this batch, so the same address twice in one batch is a duplicate. Skipped leads become `OutreachDraft`s with their skip status and an empty body. The eligible leads are drafted concurrently: the writer role (temp 0.7, `prompts/chase.py`) gets the `BrandProfile`, the goal (`route.outreach_goal`, or "introduce {brand} ({product}) and ask for a short intro call"), and the lead's name, type, location and website wrapped by `wrap_untrusted` (no contact values). It returns an `EmailDraft`. The prompt forbids unverifiable claims and fake familiarity, and asks for ≤ 150 words without an opt-out line. `enforce_body()` then appends the opt-out line; if a problem is left (`too_long`, `missing_sender`), the writer gets one revision with the problems listed. A draft that is still invalid, or whose model call failed, is saved as `failed` with a `StageError` (`policy_violation`, `invalid_output` or `model_error`). Every draft is saved to the repo; the valid ones are `pending_approval`. The per-user token buckets live in `AppDeps.outreach_buckets` (process memory, so a restart refills them; persisting them is open for T-27).
 - **`approval_gate`.** Calls `interrupt({"drafts": [...]})`. The API returns `pending_approval`. `POST /api/chat/{thread_id}/approve` resumes with `Command(resume=ApprovalDecision)`. Drafts that are neither approved nor edited become `rejected`.
 - **`chase_dispatch`** sends according to `OUTREACH_MODE`:
   - `outbox` (default): store the draft as `outboxed` and show it in the UI.

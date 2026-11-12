@@ -27,13 +27,14 @@ from pydantic import BaseModel
 
 from partner_agents import schemas
 from partner_agents.config import Settings
-from partner_agents.graph import charlie
-from partner_agents.graph.chase import chase_select
+from partner_agents.graph import charlie, chase
 from partner_agents.graph.scout import ScoutDeps, add_scout_nodes
 from partner_agents.graph.state import AgentState
 from partner_agents.llm import get_chat_model, track_providers, track_usage
 from partner_agents.observability import run_context
+from partner_agents.outreach.policy import TokenBucket
 from partner_agents.prompts import charlie as charlie_prompts
+from partner_agents.prompts import chase as chase_prompts
 from partner_agents.prompts import scout as scout_prompts
 from partner_agents.retrieval.embeddings import SentenceTransformerEmbedder
 from partner_agents.retrieval.store import KnowledgeStore, VectorStore, make_client
@@ -52,6 +53,7 @@ _PROMPTS: dict[str, tuple[str, str]] = {
     "charlie_route": ("charlie", charlie_prompts.PROMPT_VERSION),
     "kb_answer": ("charlie", charlie_prompts.PROMPT_VERSION),
     "scout_extract": ("scout", scout_prompts.PROMPT_VERSION),
+    "chase_draft": ("chase", chase_prompts.PROMPT_VERSION),
 }
 
 
@@ -66,6 +68,8 @@ class AppDeps:
     router: BaseChatModel
     writer: BaseChatModel
     clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
+    # Each user's daily outreach token bucket. Process memory: a restart refills it (HLD §6.9).
+    outreach_buckets: dict[str, TokenBucket] = field(default_factory=dict)
 
     async def aclose(self) -> None:
         await self.scout.fetcher.aclose()
@@ -120,7 +124,10 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
         "kb_answer": charlie.make_kb_answer(deps.kb, deps.writer, deps.settings),
         "ask_clarification": charlie.ask_clarification,
         "refuse": charlie.refuse,
-        "chase_select": chase_select,
+        "chase_select": chase.make_chase_select(deps.writer),
+        "chase_draft": chase.make_chase_draft(
+            deps.writer, deps.repo, deps.settings, deps.outreach_buckets, deps.clock
+        ),
     }
     for name, node in nodes.items():
         graph.add_node(name, cast(Any, node))  # see the note in graph/scout.py
@@ -129,7 +136,9 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
     graph.add_conditional_edges(
         "charlie_route", charlie.next_after_route, list(charlie.NEXT_NODE.values())
     )
-    for name in ("kb_answer", "ask_clarification", "refuse", "chase_select"):
+    graph.add_conditional_edges("chase_select", chase.next_after_select, ["chase_draft", END])
+    # Until T-24 adds approval_gate, drafts end the turn as pending_approval.
+    for name in ("kb_answer", "ask_clarification", "refuse", "chase_draft"):
         graph.add_edge(name, END)
     return graph.compile(checkpointer=checkpointer or InMemorySaver(serde=checkpoint_serde()))
 

@@ -226,6 +226,41 @@ def test_another_thread_does_not_see_the_leads(client: AsyncQdrantClient) -> Non
     assert other.reply.startswith("I have no leads in this conversation yet")
 
 
+@respx.mock
+def test_an_outreach_turn_drafts_emails_for_the_selected_leads(client: AsyncQdrantClient) -> None:
+    from partner_agents.schemas import BrandProfile, EmailDraft
+
+    serve_sites()
+    top_two = RouteDecision(
+        intent="outreach",
+        confidence=0.9,
+        lead_selector="top 2",
+        outreach_goal="introduce our cookies",
+        reason="email",
+    )
+    deps = make_deps(client, DISCOVERY, top_two)
+    reply = EmailDraft(subject="Gluten-free cookies", body="Hi, a short intro.\n\nPriya Shah")
+    deps.writer = ByPageModel(
+        messages=iter([]),
+        pages={ACME: [reply.model_dump_json()], BETA: [reply.model_dump_json()]},
+    )
+    profile = BrandProfile(
+        brand_name="Crumb & Co", product="cookies", value_prop="v", sender_name="Priya Shah",
+        sender_email="priya@crumb.example", founder_name="Priya Shah", category="cookies",
+        sign_off="Thanks",
+    )  # fmt: skip
+    asyncio.run(deps.repo.save_profile("u_1", profile))
+    _, (_, second) = turns(deps, "find cookie brokers in California", "email the top 2")
+
+    drafts = second.state["drafts"]
+    assert [d.status for d in drafts] == ["pending_approval", "pending_approval"]
+    assert {d.recipient for d in drafts} == {"sales@acme.example", "hello@beta.example"}
+    assert set(second.run.timings_ms) == {"charlie_route", "chase_select", "chase_draft"}
+    assert second.run.prompt_versions["chase"] == "chase-v1"
+    assert second.reply.startswith("I drafted 2 emails for approval:")
+    assert len(asyncio.run(deps.repo.list_drafts("u_1", status="pending_approval"))) == 2
+
+
 # --- the other branches -------------------------------------------------------------
 
 

@@ -160,6 +160,10 @@ class BrandProfile(BaseModel):
     approved_facts: list[ApprovedFact] = []
 
 
+class LeadSelection(BaseModel):  # LLM output: chase_select's fallback for free-form selectors
+    numbers: list[int] = Field(default_factory=list, max_length=25)  # 1-based list positions
+
+
 class EmailDraft(BaseModel):  # LLM output
     subject: str = Field(max_length=80)
     body: str  # ≤ 180 words, validated in outreach/policy.py

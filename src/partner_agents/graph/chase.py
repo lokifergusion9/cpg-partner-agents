@@ -1,20 +1,54 @@
-"""Chase's graph nodes (HLD §6.9). So far only ``chase_select``.
+"""Chase's graph nodes (HLD §6.9): ``chase_select`` and ``chase_draft``.
 
 ``resolve_selector`` turns ``route.lead_selector`` ("top 3", "the first one", "lead 2", "the
-LA ones", a company name) into leads of the thread's latest run, deterministically. It returns
-``None`` when it cannot read the selector; T-23 adds the LLM fallback for those, the
-``policy.eligible()`` filter, and drafting. Until then ``chase_select`` replies with the
-matching leads, so follow-ups such as "only the ones in LA" already work (PRD F5).
+LA ones", a company name) into leads of the thread's latest run, deterministically. When it
+cannot read the selector, the writer model picks numbers from the list.
+
+``chase_select`` goes on to ``chase_draft`` only when the turn asks for outreach (a goal, or a
+drafting verb) by email. Otherwise it replies with the matching leads, so follow-ups such as
+"only the ones in LA" work (PRD F5). Voice drafts arrive with ``call_plan`` (T-26).
+
+``chase_draft`` runs every selected lead through ``outreach.policy`` in order, then writes the
+eligible ones concurrently. Each draft is saved as ``pending_approval``; nothing is sent here.
 """
 
+import asyncio
+import logging
 import re
-from collections.abc import Sequence
+import uuid
+from collections.abc import Awaitable, Callable, Sequence
+from datetime import datetime, timedelta
 
-from langchain_core.messages import AIMessage
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.graph import END
 
+from partner_agents.config import Settings
+from partner_agents.graph.charlie import last_user_text
 from partner_agents.graph.state import AgentState
-from partner_agents.observability import NodeUpdate, timed_node
-from partner_agents.schemas import Lead
+from partner_agents.llm import StructuredOutputError, invoke_structured
+from partner_agents.observability import NodeUpdate, redact_contacts, timed_node
+from partner_agents.outreach.policy import TokenBucket, check_lead, enforce_body
+from partner_agents.prompts.chase import (
+    PROMPT_VERSION,
+    build_draft_messages,
+    build_selection_messages,
+    revision_note,
+)
+from partner_agents.schemas import (
+    BrandProfile,
+    EmailDraft,
+    Lead,
+    LeadSelection,
+    OutreachDraft,
+    RouteDecision,
+    StageError,
+)
+from partner_agents.storage.repo import Repository
+
+logger = logging.getLogger(__name__)
+
+Node = Callable[[AgentState], Awaitable[NodeUpdate]]
 
 _ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "last": -1}
 _NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "ten": 10}
@@ -110,26 +144,264 @@ def _describe(lead: Lead) -> str:
     return f"{lead.company_name} ({details or 'details unknown'}; {email})"
 
 
-@timed_node("chase_select")
-async def chase_select(state: AgentState) -> NodeUpdate:
-    """Resolve the selector against the thread's latest leads and say which ones it means."""
-    leads = state.get("leads", [])
+def _error(stage: str, exc: Exception) -> StageError:
+    if isinstance(exc, StructuredOutputError):
+        return StageError(stage=stage, code="invalid_output", message=exc.detail)
+    logger.warning("%s model call failed", stage, extra={"error_type": type(exc).__name__})
+    return StageError(
+        stage=stage,
+        code="model_error",
+        message=f"{type(exc).__name__}: {redact_contacts(str(exc))[:200]}",
+    )
+
+
+# --- chase_select -------------------------------------------------------------------
+
+NO_LEADS = "I have no leads in this conversation yet. Ask me to find some partners first."
+NOT_UNDERSTOOD = (
+    'I could not tell which leads you mean. Try "the top 3", "lead 2" or "the ones in Los Angeles".'
+)
+NO_CALLS_YET = "Calling is not set up yet, so I have not planned a call."
+
+# A turn asks for outreach when it states a goal or uses one of these verbs ("the LA ones"
+# alone only narrows the list).
+_OUTREACH_VERB = re.compile(
+    r"\b(?:draft|e-?mail|mail|write|send|reach(?:\s+out)?|contact|message|pitch|introduce|"
+    r"call|phone|ring)\b",
+    re.IGNORECASE,
+)
+
+
+def wants_drafts(route: RouteDecision | None, user_text: str) -> bool:
+    if route is None or route.intent != "outreach":
+        return False
+    return bool(route.outreach_goal) or _OUTREACH_VERB.search(user_text) is not None
+
+
+def next_after_select(state: AgentState) -> str:
+    """Conditional edge out of ``chase_select``: draft emails, or end with its reply."""
     route = state.get("route")
-    selector = route.lead_selector if route else None
-    if not leads:
-        reply = "I have no leads in this conversation yet. Ask me to find some partners first."
-        return {"selected_leads": [], "messages": [AIMessage(content=reply)]}
-    chosen = resolve_selector(leads, selector)
-    if chosen is None:
-        reply = (
-            'I could not tell which leads you mean. Try "the top 3", "lead 2" or '
-            '"the ones in Los Angeles".'
+    if (
+        state.get("selected_leads")
+        and route is not None
+        and route.outreach_channel == "email"
+        and wants_drafts(route, last_user_text(list(state.get("messages", []))))
+    ):
+        return "chase_draft"
+    return END
+
+
+async def _llm_select(
+    model: BaseChatModel, leads: Sequence[Lead], selector: str, user_text: str
+) -> list[Lead]:
+    picked = await invoke_structured(
+        model,
+        LeadSelection,
+        build_selection_messages(selector, user_text, leads),
+        role="writer",
+        prompt_version=PROMPT_VERSION,
+    )
+    positions = sorted({n for n in picked.numbers if 1 <= n <= len(leads)})
+    return [leads[n - 1] for n in positions]
+
+
+def make_chase_select(model: BaseChatModel) -> Node:
+    """The ``chase_select`` node: ``route.lead_selector`` + thread leads -> ``selected_leads``."""
+
+    @timed_node("chase_select")
+    async def chase_select(state: AgentState) -> NodeUpdate:
+        leads = state.get("leads", [])
+        route = state.get("route")
+        selector = route.lead_selector if route else None
+        user_text = last_user_text(list(state.get("messages", [])))
+        if not leads:
+            return {"selected_leads": [], "messages": [AIMessage(content=NO_LEADS)]}
+        errors: list[StageError] = []
+        chosen = resolve_selector(leads, selector)
+        if chosen is None and (selector or "").strip():
+            try:
+                chosen = await _llm_select(model, leads, str(selector), user_text)
+            except Exception as exc:
+                errors.append(_error("chase_select", exc))
+        if chosen is None:
+            reply = NOT_UNDERSTOOD
+            return {"selected_leads": [], "messages": [AIMessage(content=reply)], "errors": errors}
+        update: NodeUpdate = {"selected_leads": [lead.id for lead in chosen], "errors": errors}
+        drafting = wants_drafts(route, user_text)
+        if chosen and drafting and route is not None and route.outreach_channel == "email":
+            return update  # chase_draft replies
+        if not chosen:
+            reply = f'None of the {len(leads)} leads match "{selector}".'
+        else:
+            noun = "lead matches" if len(chosen) == 1 else "leads match"
+            lines = [f"{i}. {_describe(lead)}" for i, lead in enumerate(chosen, start=1)]
+            reply = f'{len(chosen)} of {len(leads)} {noun} "{selector}":\n' + "\n".join(lines)
+            if drafting:  # a call was asked for
+                reply += f"\n\n{NO_CALLS_YET}"
+        return {**update, "messages": [AIMessage(content=reply)]}
+
+    return chase_select
+
+
+# --- chase_draft --------------------------------------------------------------------
+
+NO_PROFILE = (
+    "Set up your brand profile first (brand, product, sender and sign-off), so the emails "
+    "can say who they are from."
+)
+_SKIP_REASON = {
+    "skipped_ineligible": "no verified email",
+    "skipped_duplicate": "already contacted recently",
+    "skipped_cap": "daily outreach limit reached",
+}
+
+
+def default_goal(profile: BrandProfile) -> str:
+    return f"introduce {profile.brand_name} ({profile.product}) and ask for a short intro call"
+
+
+def new_draft_id() -> str:
+    return f"d_{uuid.uuid4().hex[:12]}"
+
+
+async def write_email(
+    model: BaseChatModel, profile: BrandProfile, goal: str, lead: Lead
+) -> tuple[EmailDraft, list[str]]:
+    """One draft, revised once if the policy rejects the body. Returns the draft (body with
+    the opt-out line) and the problems that are left."""
+    messages: list[BaseMessage] = build_draft_messages(profile, goal, lead)
+    for attempt in (1, 2):
+        draft = await invoke_structured(
+            model, EmailDraft, messages, role="writer", prompt_version=PROMPT_VERSION
         )
-        return {"selected_leads": [], "messages": [AIMessage(content=reply)]}
-    if not chosen:
-        reply = f'None of the {len(leads)} leads match "{selector}".'
+        check = enforce_body(draft.body, profile.sender_name)
+        fixed = draft.model_copy(update={"body": check.body})
+        if check.ok or attempt == 2:
+            return fixed, list(check.problems)
+        note = revision_note(check.problems, check.word_count)
+        messages = [*messages, AIMessage(content=draft.model_dump_json()), HumanMessage(note)]
+    raise AssertionError("unreachable")
+
+
+def _reply(drafts: Sequence[OutreachDraft], leads: dict[str, Lead]) -> str:
+    def name(draft: OutreachDraft) -> str:
+        return leads[draft.lead_id].company_name
+
+    ready = [d for d in drafts if d.status == "pending_approval"]
+    lines = []
+    if ready:
+        lines.append(f"I drafted {len(ready)} email{'s' if len(ready) != 1 else ''} for approval:")
+        lines += [f"{i}. {name(d)}: {d.subject}" for i, d in enumerate(ready, start=1)]
     else:
-        noun = "lead matches" if len(chosen) == 1 else "leads match"
-        lines = [f"{i}. {_describe(lead)}" for i, lead in enumerate(chosen, start=1)]
-        reply = f'{len(chosen)} of {len(leads)} {noun} "{selector}":\n' + "\n".join(lines)
-    return {"selected_leads": [lead.id for lead in chosen], "messages": [AIMessage(content=reply)]}
+        lines.append("I did not draft any emails.")
+    skipped = [d for d in drafts if d.status in _SKIP_REASON]
+    failed = [d for d in drafts if d.status == "failed"]
+    if skipped:
+        lines.append(
+            "Skipped: " + "; ".join(f"{name(d)} ({_SKIP_REASON[d.status]})" for d in skipped)
+        )
+    if failed:
+        lines.append("Could not write a valid draft for: " + ", ".join(name(d) for d in failed))
+    if ready:
+        lines.append("Nothing is sent until you approve it.")
+    return "\n".join(lines)
+
+
+def make_chase_draft(
+    model: BaseChatModel,
+    repo: Repository,
+    settings: Settings,
+    buckets: dict[str, TokenBucket],
+    clock: Callable[[], datetime],
+) -> Node:
+    """The ``chase_draft`` node: selected leads + brand profile -> ``drafts``.
+
+    ``buckets`` holds each user's daily token bucket (process memory; HLD §6.9).
+    """
+
+    @timed_node("chase_draft")
+    async def chase_draft(state: AgentState) -> NodeUpdate:
+        user_id, run_id = state.get("user_id", ""), state.get("run_id", "")
+        profile = await repo.get_profile(user_id)
+        if profile is None:
+            return {"drafts": [], "messages": [AIMessage(content=NO_PROFILE)]}
+        route = state.get("route")
+        goal = (route.outreach_goal if route else None) or default_goal(profile)
+        by_id = {lead.id: lead for lead in state.get("leads", [])}
+        selected = [by_id[i] for i in state.get("selected_leads", []) if i in by_id]
+        now = clock()
+
+        def record(lead: Lead, status: str, email: EmailDraft | None = None) -> OutreachDraft:
+            return OutreachDraft(
+                id=new_draft_id(),
+                lead_id=lead.id,
+                user_id=user_id,
+                run_id=run_id,
+                channel="email",
+                recipient=lead.email or "",
+                subject=email.subject if email else None,
+                body=email.body if email else "",
+                status=status,  # type: ignore[arg-type]
+                prompt_version=PROMPT_VERSION,
+                created_at=now,
+            )
+
+        # Policy first, in order, so a recipient listed twice is a duplicate of itself.
+        bucket = buckets.get(user_id) or TokenBucket.full(settings.outreach_daily_cap, now)
+        since = now - timedelta(days=settings.outreach_dedupe_days)
+        batch: list[OutreachDraft] = []
+        to_write: list[Lead] = []
+        for lead in selected:
+            previous = await repo.recent_drafts_to(user_id, lead.email, since) if lead.email else []
+            skip, bucket = check_lead(
+                lead,
+                previous=[*previous, *batch],
+                bucket=bucket,
+                now=now,
+                mode=settings.outreach_mode,
+                allowlist=settings.outreach_allowlist,
+                dedupe_days=settings.outreach_dedupe_days,
+            )
+            if skip is None:
+                to_write.append(lead)
+            # A passing lead gets a pending placeholder, so the in-batch dedupe sees it.
+            batch.append(record(lead, skip or "pending_approval"))
+        buckets[user_id] = bucket
+
+        results = await asyncio.gather(
+            *(write_email(model, profile, goal, lead) for lead in to_write),
+            return_exceptions=True,
+        )
+        written = dict(zip((lead.id for lead in to_write), results, strict=True))
+        drafts: list[OutreachDraft] = []
+        errors: list[StageError] = []
+        for placeholder, lead in zip(batch, selected, strict=True):
+            if placeholder.status != "pending_approval":
+                drafts.append(placeholder)
+                continue
+            result = written[lead.id]
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result
+                errors.append(_error("chase_draft", result))
+                drafts.append(record(lead, "failed"))
+                continue
+            email, problems = result
+            if problems:
+                errors.append(
+                    StageError(
+                        stage="chase_draft",
+                        code="policy_violation",
+                        message=f"{lead.id}: {', '.join(problems)}",
+                    )
+                )
+            drafts.append(record(lead, "failed" if problems else "pending_approval", email))
+        for draft in drafts:
+            await repo.save_draft(draft)
+        return {
+            "drafts": drafts,
+            "messages": [AIMessage(content=_reply(drafts, by_id))],
+            "errors": errors,
+        }
+
+    return chase_draft
