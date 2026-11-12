@@ -265,7 +265,11 @@ def test_an_outreach_turn_drafts_emails_for_the_selected_leads(client: AsyncQdra
 
 
 def seeded_approval(
-    client: AsyncQdrantClient, settings: Settings | None = None, gmail: Any = None
+    client: AsyncQdrantClient,
+    settings: Settings | None = None,
+    gmail: Any = None,
+    first_route: RouteDecision | None = None,
+    voice: Any = None,
 ) -> tuple[AppDeps, Graph, Any]:
     """A thread that already holds three verified leads and a brand profile."""
     from datetime import UTC, datetime
@@ -277,10 +281,11 @@ def seeded_approval(
         intent="outreach", confidence=0.9, lead_selector="top 3", outreach_goal="intro",
         reason="email",
     )  # fmt: skip
-    deps = make_deps(client, top3)
+    deps = make_deps(client, first_route or top3)
     if settings is not None:
         deps.settings = settings
     deps.gmail = gmail
+    deps.voice = voice
     keys = ("acme", "beta", "gamma")
     deps.writer = ByPageModel(
         messages=iter([]), pages={f"https://{k}.example/": [reply] for k in keys}
@@ -311,8 +316,8 @@ def seeded_approval(
             website=None,
             email=f"buyer@{k}.example",
             email_status="verified",
-            phone=None,
-            phone_status="unchecked",
+            phone=f"+1310555010{keys.index(k)}",
+            phone_status="verified",
             source_url=f"https://{k}.example/",
             evidence_quote="q",
             created_at=datetime.now(UTC),
@@ -420,6 +425,100 @@ def test_a_dispatch_failure_marks_the_draft_failed_and_the_run_keeps_the_error(
     assert [d.status for d in done.state["drafts"]] == ["failed", "rejected", "rejected"]
     assert [(e.stage, e.code) for e in done.run.errors] == [("chase_dispatch", "gmail_error")]
     assert "1 failed (gmail_error)" in done.reply
+
+
+VOICE_FIRST = RouteDecision(
+    intent="outreach",
+    confidence=0.9,
+    lead_selector="lead 1",
+    outreach_channel="voice",
+    reason="call",
+)
+
+
+def test_call_lead_1_plans_a_call_and_approval_creates_it(client: AsyncQdrantClient) -> None:
+    from partner_agents.graph.build import resume_turn
+    from partner_agents.outreach.voice import MockVoiceCaller
+    from partner_agents.schemas import ApprovalDecision
+
+    deps, graph, _ = seeded_approval(client, first_route=VOICE_FIRST, voice=MockVoiceCaller())
+
+    async def go() -> Any:
+        paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="call lead 1")
+        [plan] = paused.pending_approval["drafts"]
+        done = await resume_turn(
+            graph, deps, thread_id="t_1", user_id="u_1",
+            decision=ApprovalDecision(approve=[plan["id"]]),
+        )  # fmt: skip
+        return paused, plan, done
+
+    paused, plan, done = asyncio.run(go())
+    assert (plan["channel"], plan["lead_id"], plan["status"]) == (
+        "voice",
+        "acme",
+        "pending_approval",
+    )
+    assert plan["subject"] is None and plan["recipient"] == "+13105550100"
+    assert "Playbook: partner_intro" in plan["body"] and "nobody is dialled" in plan["body"]
+    assert paused.reply.startswith("I planned 1 call for approval:")
+    assert "1. Acme Foods" in paused.reply
+    assert set(paused.run.timings_ms) == {"charlie_route", "chase_select", "call_plan"}
+
+    [voice] = done.state["drafts"]
+    assert voice.status == "call_created"
+    assert len(done.state["call_ids"]) == 1 and done.state["call_ids"][0].startswith("c_")
+    assert done.reply.startswith("Dispatch: 1 call(s) created (nobody was dialled)")
+    saved = asyncio.run(deps.repo.list_drafts("u_1"))
+    assert [(d.channel, d.status) for d in saved] == [("voice", "call_created")]
+
+
+def test_a_rejected_call_plan_starts_nothing(client: AsyncQdrantClient) -> None:
+    from partner_agents.graph.build import resume_turn
+    from partner_agents.outreach.voice import MockVoiceCaller
+    from partner_agents.schemas import ApprovalDecision
+
+    started: list[str] = []
+
+    class Spy(MockVoiceCaller):
+        async def start(self, draft: Any) -> str:
+            started.append(draft.id)
+            return await super().start(draft)
+
+    deps, graph, _ = seeded_approval(client, first_route=VOICE_FIRST, voice=Spy())
+
+    async def go() -> Any:
+        paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="call lead 1")
+        ids = [d["id"] for d in paused.pending_approval["drafts"]]
+        return await resume_turn(
+            graph, deps, thread_id="t_1", user_id="u_1", decision=ApprovalDecision(reject=ids)
+        )
+
+    done = asyncio.run(go())
+    assert [d.status for d in done.state["drafts"]] == ["rejected"] and started == []
+    assert not done.state.get("call_ids")
+
+
+def test_vapi_refuses_a_number_that_is_not_allowlisted(client: AsyncQdrantClient) -> None:
+    from partner_agents.graph.build import resume_turn
+    from partner_agents.schemas import ApprovalDecision
+
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, voice_provider="vapi", voice_allowlist=["+19998887777"]
+    )
+    # No live caller exists yet (voice=None); the allowlist must refuse first anyway.
+    deps, graph, _ = seeded_approval(client, settings, first_route=VOICE_FIRST)
+
+    async def go() -> Any:
+        paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="call lead 1")
+        ids = [d["id"] for d in paused.pending_approval["drafts"]]
+        return await resume_turn(
+            graph, deps, thread_id="t_1", user_id="u_1", decision=ApprovalDecision(approve=ids)
+        )
+
+    done = asyncio.run(go())
+    assert [d.status for d in done.state["drafts"]] == ["failed"]
+    assert [e.code for e in done.run.errors] == ["not_allowlisted"]
+    assert not done.state.get("call_ids")
 
 
 def test_an_edit_that_breaks_the_policy_pauses_again(client: AsyncQdrantClient) -> None:

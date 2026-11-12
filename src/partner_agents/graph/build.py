@@ -28,13 +28,14 @@ from pydantic import BaseModel
 
 from partner_agents import schemas
 from partner_agents.config import Settings
-from partner_agents.graph import approval, charlie, chase, dispatch
+from partner_agents.graph import approval, call_plan, charlie, chase, dispatch
 from partner_agents.graph.scout import ScoutDeps, add_scout_nodes
 from partner_agents.graph.state import AgentState
 from partner_agents.llm import get_chat_model, track_providers, track_usage
 from partner_agents.observability import run_context
 from partner_agents.outreach.email import GmailClient, HttpxGmailClient
 from partner_agents.outreach.policy import TokenBucket
+from partner_agents.outreach.voice import MockVoiceCaller, VoiceCaller
 from partner_agents.prompts import charlie as charlie_prompts
 from partner_agents.prompts import chase as chase_prompts
 from partner_agents.prompts import scout as scout_prompts
@@ -74,6 +75,8 @@ class AppDeps:
     outreach_buckets: dict[str, TokenBucket] = field(default_factory=dict)
     # Only the gmail_draft and gmail_send modes use it; outbox needs no client.
     gmail: GmailClient | None = None
+    # The mock caller dials nobody. A live provider has no caller yet (stretch), so it fails.
+    voice: VoiceCaller | None = None
 
     async def aclose(self) -> None:
         await self.scout.fetcher.aclose()
@@ -102,6 +105,7 @@ def build_app_deps(settings: Settings) -> AppDeps:
         router=get_chat_model("router", settings=settings),
         writer=get_chat_model("writer", settings=settings),
         gmail=HttpxGmailClient(settings) if settings.outreach_mode != "outbox" else None,
+        voice=MockVoiceCaller() if settings.voice_provider == "mock" else None,
     )
 
 
@@ -134,8 +138,9 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
             deps.writer, deps.repo, deps.settings, deps.outreach_buckets, deps.clock
         ),
         "approval_gate": approval.make_approval_gate(deps.repo, deps.clock),
+        "call_plan": call_plan.make_call_plan(deps.repo, deps.settings, deps.clock),
         "chase_dispatch": dispatch.make_chase_dispatch(
-            deps.repo, deps.settings, deps.gmail, deps.clock
+            deps.repo, deps.settings, deps.gmail, deps.voice, deps.clock
         ),
     }
     for name, node in nodes.items():
@@ -145,8 +150,11 @@ def build_graph(deps: AppDeps, checkpointer: BaseCheckpointSaver[Any] | None = N
     graph.add_conditional_edges(
         "charlie_route", charlie.next_after_route, list(charlie.NEXT_NODE.values())
     )
-    graph.add_conditional_edges("chase_select", chase.next_after_select, ["chase_draft", END])
-    graph.add_conditional_edges("chase_draft", approval.next_after_draft, ["approval_gate", END])
+    graph.add_conditional_edges(
+        "chase_select", chase.next_after_select, ["chase_draft", "call_plan", END]
+    )
+    for name in ("chase_draft", "call_plan"):
+        graph.add_conditional_edges(name, approval.next_after_draft, ["approval_gate", END])
     graph.add_edge("approval_gate", "chase_dispatch")
     for name in ("kb_answer", "ask_clarification", "refuse", "chase_dispatch"):
         graph.add_edge(name, END)

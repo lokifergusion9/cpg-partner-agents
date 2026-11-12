@@ -5,8 +5,8 @@ LA ones", a company name) into leads of the thread's latest run, deterministical
 cannot read the selector, the writer model picks numbers from the list.
 
 ``chase_select`` goes on to ``chase_draft`` only when the turn asks for outreach (a goal, or a
-drafting verb) by email. Otherwise it replies with the matching leads, so follow-ups such as
-"only the ones in LA" work (PRD F5). Voice drafts arrive with ``call_plan`` (T-26).
+drafting verb): by email to ``chase_draft``, by voice to ``call_plan``. Otherwise it replies with
+the matching leads, so follow-ups such as "only the ones in LA" work (PRD F5).
 
 ``chase_draft`` runs every selected lead through ``outreach.policy`` in order, then writes the
 eligible ones concurrently. Each draft is saved as ``pending_approval``; nothing is sent here.
@@ -161,7 +161,6 @@ NO_LEADS = "I have no leads in this conversation yet. Ask me to find some partne
 NOT_UNDERSTOOD = (
     'I could not tell which leads you mean. Try "the top 3", "lead 2" or "the ones in Los Angeles".'
 )
-NO_CALLS_YET = "Calling is not set up yet, so I have not planned a call."
 
 # A turn asks for outreach when it states a goal or uses one of these verbs ("the LA ones"
 # alone only narrows the list).
@@ -179,15 +178,14 @@ def wants_drafts(route: RouteDecision | None, user_text: str) -> bool:
 
 
 def next_after_select(state: AgentState) -> str:
-    """Conditional edge out of ``chase_select``: draft emails, or end with its reply."""
+    """Conditional edge out of ``chase_select``: plan the outreach, or end with its reply."""
     route = state.get("route")
     if (
         state.get("selected_leads")
         and route is not None
-        and route.outreach_channel == "email"
         and wants_drafts(route, last_user_text(list(state.get("messages", []))))
     ):
-        return "chase_draft"
+        return "call_plan" if route.outreach_channel == "voice" else "chase_draft"
     return END
 
 
@@ -228,16 +226,14 @@ def make_chase_select(model: BaseChatModel) -> Node:
             return {"selected_leads": [], "messages": [AIMessage(content=reply)], "errors": errors}
         update: NodeUpdate = {"selected_leads": [lead.id for lead in chosen], "errors": errors}
         drafting = wants_drafts(route, user_text)
-        if chosen and drafting and route is not None and route.outreach_channel == "email":
-            return update  # chase_draft replies
+        if chosen and drafting:
+            return update  # chase_draft or call_plan replies
         if not chosen:
             reply = f'None of the {len(leads)} leads match "{selector}".'
         else:
             noun = "lead matches" if len(chosen) == 1 else "leads match"
             lines = [f"{i}. {_describe(lead)}" for i, lead in enumerate(chosen, start=1)]
             reply = f'{len(chosen)} of {len(leads)} {noun} "{selector}":\n' + "\n".join(lines)
-            if drafting:  # a call was asked for
-                reply += f"\n\n{NO_CALLS_YET}"
         return {**update, "messages": [AIMessage(content=reply)]}
 
     return chase_select

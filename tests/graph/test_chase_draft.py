@@ -15,7 +15,6 @@ from partner_agents import llm
 from partner_agents.config import Settings
 from partner_agents.fakes import ScriptedChatModel
 from partner_agents.graph.chase import (
-    NO_CALLS_YET,
     NO_PROFILE,
     NOT_UNDERSTOOD,
     make_chase_draft,
@@ -153,10 +152,16 @@ def test_a_narrowing_turn_lists_the_leads_and_ends() -> None:
     assert nxt == END
 
 
-def test_a_call_request_does_not_draft_emails_yet() -> None:
+def test_a_call_request_goes_to_call_plan() -> None:
     update, nxt = select("call the first one", route("the first one", channel="voice"))
     assert update["selected_leads"] == ["acme"]
-    assert NO_CALLS_YET in update["messages"][0].text
+    assert "messages" not in update  # call_plan replies
+    assert nxt == "call_plan"
+
+
+def test_a_narrowing_turn_for_a_call_still_only_lists_the_leads() -> None:
+    update, nxt = select("only the ones in LA", route("the ones in LA", channel="voice"))
+    assert update["messages"][0].text.startswith('3 of 4 leads match "the ones in LA"')
     assert nxt == END
 
 
