@@ -14,6 +14,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LLMProvider = Literal["gemini", "groq", "ollama", "fake"]
 SearchProviderName = Literal["tavily", "ddg"]
+# DEMO_MODE: the most results one search may ask for (HLD §13).
+DEMO_MAX_RESULTS = 5
+
 OutreachMode = Literal["outbox", "gmail_draft", "gmail_send"]
 VoiceProvider = Literal["mock", "vapi"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]

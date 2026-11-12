@@ -54,7 +54,8 @@ def create_app(
         async def home() -> RedirectResponse:
             return RedirectResponse("/ui/")
 
-        ui = build_ui(lambda: app.state.ctx)
+        active = settings or (deps.settings if deps else get_settings())
+        ui = build_ui(lambda: app.state.ctx, demo_mode=active.demo_mode)
         app = gr.mount_gradio_app(app, ui, path="/ui", ssr_mode=False)
     return app
 

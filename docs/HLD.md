@@ -721,6 +721,8 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `STRICT_NODES` | `false` | `true` makes `timed_node` re-raise unexpected exceptions instead of recording a `StageError` (tests, debugging) |
 | `APP_API_KEY` | — | protects `/api` |
 | `DEMO_MODE` | `false` | forces outbox + mock voice, caps `max_results` at 5, caps simulated calls at 3 per user per hour |
+
+**Demo mode (T-31).** `DEMO_MODE=true` does all of this: `Settings` forces `OUTREACH_MODE=outbox` (even `gmail_send` without an allowlist is then accepted, because nothing is sent) and `VOICE_PROVIDER=mock`; `charlie_route` caps `discovery.max_results` at `config.DEMO_MAX_RESULTS` (5); the API skips the `X-API-Key` check; the UI shows a banner (`ui.app.DEMO_BANNER`), hides the user id box and gives each page load an anonymous id (`init_session`), and saves the fictional sample brand (`demo.SAMPLE_BRAND`, "Hearthside Crumbs", six approved facts, reserved `.example` domain) under that id so drafting works at once. The cap on simulated calls arrives with the call agent (M6).
 | `RATE_LIMIT_RUNS_PER_HOUR` | `5` | per user/IP, discovery runs |
 | `DATA_TTL_DAYS` | `7` | pages + chunks |
 

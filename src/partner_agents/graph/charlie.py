@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
-from partner_agents.config import Settings
+from partner_agents.config import DEMO_MAX_RESULTS, Settings
 from partner_agents.graph.state import AgentState
 from partner_agents.llm import StructuredOutputError, invoke_structured
 from partner_agents.observability import NodeUpdate, redact_contacts, timed_node
@@ -74,9 +74,16 @@ def _clarify(decision: RouteDecision, question: str, reason: str) -> RouteDecisi
 
 
 def apply_route_rules(
-    decision: RouteDecision, *, min_confidence: float, raw_query: str
+    decision: RouteDecision,
+    *,
+    min_confidence: float,
+    raw_query: str,
+    max_results_cap: int | None = None,
 ) -> RouteDecision:
-    """The coercion rules of HLD §6.1, plus tidying fields that belong to other intents."""
+    """The coercion rules of HLD §6.1, plus tidying fields that belong to other intents.
+
+    ``max_results_cap`` is the demo limit on how many results one search may ask for.
+    """
     if decision.intent not in ("out_of_scope", "clarify") and decision.confidence < min_confidence:
         return _clarify(decision, LOW_CONFIDENCE_QUESTION, "low confidence")
     if decision.intent == "discovery":
@@ -88,9 +95,16 @@ def apply_route_rules(
                 MISSING_SLOTS_QUESTION,
                 "missing discovery slots",
             )
+        wanted = (
+            intent.max_results
+            if max_results_cap is None
+            else min(intent.max_results, max_results_cap)
+        )
         return decision.model_copy(
             update={
-                "discovery": intent.model_copy(update={"raw_query": raw_query or intent.raw_query}),
+                "discovery": intent.model_copy(
+                    update={"raw_query": raw_query or intent.raw_query, "max_results": wanted}
+                ),
                 "clarifying_question": None,
                 "outreach_goal": None,
                 "lead_selector": None,
@@ -139,7 +153,10 @@ def make_charlie_route(model: BaseChatModel, settings: Settings) -> Node:
             )
         else:
             route = apply_route_rules(
-                decision, min_confidence=settings.router_min_confidence, raw_query=raw_query
+                decision,
+                min_confidence=settings.router_min_confidence,
+                raw_query=raw_query,
+                max_results_cap=DEMO_MAX_RESULTS if settings.demo_mode else None,
             )
             return {"route": route}
         fallback = RouteDecision(

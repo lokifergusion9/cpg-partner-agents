@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import gradio as gr
 from pydantic import ValidationError
 
+from partner_agents.demo import SAMPLE_BRAND
 from partner_agents.graph.build import Context, NothingToApprove, resume_turn, run_turn
 from partner_agents.schemas import (
     ApprovalDecision,
@@ -62,6 +63,11 @@ RUN_HEADERS = ["Run", "Intent", "Started", "Total (ms)", "Tokens", "Errors", "St
 APPROVE, EDIT, REJECT = "Approve", "Edit and approve", "Reject"
 PENDING_NOTICE = "Some drafts are waiting for you. Open the Approvals tab and decide on them first."
 NEW_USER_HELP = "Letters, digits, _ and - only (1 to 64 characters)."
+DEMO_BANNER = (
+    "**Demo mode.** Approved emails go to a sandbox outbox and nothing is sent, calls are "
+    "simulated, a search returns at most 5 results, and your session id is anonymous. "
+    "The brand profile below is a fictional sample brand."
+)
 
 
 def new_user_id() -> str:
@@ -278,6 +284,18 @@ async def save_profile(ctx: Context, user_id: str, values: Sequence[str]) -> str
     return "Brand profile saved."
 
 
+async def init_session(ctx: Context, demo_mode: bool) -> tuple[str, list[str]]:
+    """A fresh anonymous user id and the profile form for it.
+
+    In demo mode the fictional sample brand is saved for that id, so drafting works at once.
+    """
+    user_id = new_user_id()
+    if not demo_mode:
+        return user_id, profile_to_form(None)
+    await ctx.deps.repo.save_profile(user_id, SAMPLE_BRAND)
+    return user_id, profile_to_form(SAMPLE_BRAND)
+
+
 # --- layout -------------------------------------------------------------------------
 
 LABELS = {
@@ -289,7 +307,7 @@ LABELS = {
 }  # fmt: skip
 
 
-def build_ui(get_ctx: Callable[[], Context]) -> gr.Blocks:
+def build_ui(get_ctx: Callable[[], Context], demo_mode: bool = False) -> gr.Blocks:
     """The Blocks app. ``get_ctx`` is called per event: the context exists only after startup."""
 
     async def drafts_of(user_id: str) -> list[list[str]]:
@@ -341,6 +359,8 @@ def build_ui(get_ctx: Callable[[], Context]) -> gr.Blocks:
             "# CPG Partner Agents\nFind partners, check their contacts against the source page, "
             "and approve every message before it leaves."
         )
+        if demo_mode:
+            gr.Markdown(DEMO_BANNER)
         thread_state = gr.State(None)
         pending_state = gr.State(None)
 
@@ -423,7 +443,7 @@ def build_ui(get_ctx: Callable[[], Context]) -> gr.Blocks:
             refresh_runs = gr.Button("Refresh")
 
         with gr.Tab("Settings"):
-            user_box = gr.Textbox(label="User id", info=NEW_USER_HELP, value=new_user_id)
+            user_box = gr.Textbox(label="User id", info=NEW_USER_HELP, visible=not demo_mode)
             gr.Markdown("### Brand profile\nEvery email and call plan is written from this.")
             fields = [
                 gr.Textbox(label=LABELS[name], lines=4 if name == "facts" else 1)
@@ -446,6 +466,12 @@ def build_ui(get_ctx: Callable[[], Context]) -> gr.Blocks:
 
         async def on_save(user_id: str, *values: str) -> str:
             return await save_profile(get_ctx(), user_id, values)
+
+        async def on_load() -> tuple[Any, ...]:
+            user_id, values = await init_session(get_ctx(), demo_mode)
+            return user_id, *values
+
+        ui.load(on_load, None, [user_box, *fields])
 
         for trigger in (send.click, msg.submit):
             trigger(
