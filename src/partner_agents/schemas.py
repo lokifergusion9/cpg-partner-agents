@@ -284,23 +284,27 @@ class TurnSignals(BaseModel):  # classifier output for one partner turn
     slot_values: dict[str, str] = {}  # qualification slots answered in this turn
 
 
+DirectiveAction = Literal[
+    "open",
+    "confirm_person",
+    "discover",  # ask the discovery question: taking on new lines in the category?
+    "offer_callback",
+    "ask_slot",
+    "confirm_slot",
+    "acknowledge",
+    "answer_question",
+    "pitch",
+    "retry_once",
+    "propose_slot",
+    "confirm_booking",
+    "disclose_ai",
+    "close",
+    "exit_politely",
+]
+
+
 class Directive(BaseModel):  # what the stage machine tells the writer to do next
-    action: Literal[
-        "open",
-        "confirm_person",
-        "offer_callback",
-        "ask_slot",
-        "confirm_slot",
-        "acknowledge",
-        "answer_question",
-        "pitch",
-        "retry_once",
-        "propose_slot",
-        "confirm_booking",
-        "disclose_ai",
-        "close",
-        "exit_politely",
-    ]
+    action: DirectiveAction
     slot: str | None = None
     fact_ids: list[str] = []  # approved facts the pitch may use
     proposed_slot: AwareDatetime | None = None
@@ -330,8 +334,15 @@ class CallProgress(BaseModel):  # the stage machine's state (pure data)
     slots: dict[str, str] = {}
     retries_used: dict[str, int] = {}  # per stage; at most 1 (rule U-RETRY-1)
     proposed_slot: AwareDatetime | None = None
-    turns: int = 0
+    turns: int = 0  # partner turns handled
     outcome: CallOutcome | None = None
+    booking: Literal["meeting", "callback", "founder"] = "meeting"  # what an agreed time books
+    asked_slots: list[str] = []  # qualification slots already asked or confirmed, in order
+    in_rush: bool = False  # from now on ask only the required slots
+    recovering: bool = False  # distress was acknowledged; a negative next turn ends the call
+    closing_outcome: CallOutcome | None = None  # the outcome the call ends with after closing
+    open_question: bool = False  # a partner question still to answer before signing off
+    partner_time: AwareDatetime | None = None  # a time the partner named that was not bookable
 
 
 class CallRecord(BaseModel):

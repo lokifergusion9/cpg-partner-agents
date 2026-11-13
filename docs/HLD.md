@@ -230,7 +230,7 @@ class TurnSignals(BaseModel):              # classifier output for one partner t
     slot_values: dict[str, str] = {}       # qualification slots answered in this turn
 
 class Directive(BaseModel):                # what the stage machine tells the writer to do next
-    action: Literal["open", "confirm_person", "offer_callback", "ask_slot", "confirm_slot",
+    action: Literal["open", "confirm_person", "discover", "offer_callback", "ask_slot", "confirm_slot",
                     "acknowledge", "answer_question", "pitch", "retry_once", "propose_slot",
                     "confirm_booking", "disclose_ai", "close", "exit_politely"]
     slot: str | None = None
@@ -254,8 +254,16 @@ class CallProgress(BaseModel):             # the stage machine's state (pure dat
     slots: dict[str, str] = {}
     retries_used: dict[str, int] = {}      # per stage; at most 1 (rule U-RETRY-1)
     proposed_slot: AwareDatetime | None = None
-    turns: int = 0
+    turns: int = 0                         # partner turns handled
     outcome: CallOutcome | None = None
+    # added in T-55: the state the stage machine needs between turns
+    booking: Literal["meeting", "callback", "founder"] = "meeting"   # what an agreed time books
+    asked_slots: list[str] = []            # slots already asked or confirmed, in order
+    in_rush: bool = False                  # sticky: ask only required_slots from now on
+    recovering: bool = False               # distress acknowledged; a negative next turn ends
+    closing_outcome: CallOutcome | None = None   # set at booking; the outcome after closing
+    open_question: bool = False            # a question to answer before signing off
+    partner_time: AwareDatetime | None = None    # a time the partner named that was not bookable
 
 class CallRecord(BaseModel):
     id: str; user_id: str; lead_id: str; run_id: str; draft_id: str
@@ -530,6 +538,14 @@ The first agent turn (opening) skips `call_classify`. The sub-graph uses its own
 6. `resistance` → `retry_once` if `retries_used[stage] == 0`, otherwise move to the stage's exit path.
 7. `question` → `answer_question` first. The answer may use only approved facts; with no matching fact, the agent offers to have the founder answer it on the meeting.
 8. `progress.turns ≥ max_turns` → outcome `incomplete`, directive `close`.
+
+**How `calls/stages.advance(progress, signals, playbook, brand, *, now, max_turns=None)` applies the list (T-55).** It never mutates its input and raises `CallEnded` on a call that has an outcome. Order: opt-out; the turn limit (checked second, right after opt-out; `min(max_turns, playbook.max_turns)` partner turns; a meeting already booked keeps its outcome instead of `incomplete`); slot values are merged (known slot names only, in any stage) and `in_rush` is made sticky; a negative turn right after distress ends as `not_interested`; `asks_if_ai`; `wants_human` (before handoff: jump to handoff with `booking="founder"`; in handoff: the booking becomes the founder's); `distressed`; `wants_other_category` → `disqualified`; then the stage transition. A partner `question` is answered **instead of** the transition (merged slots are kept, the step happens on the next turn), except when the transition ends the call or confirms a booking: then `open_question` is set and closing answers it before signing off.
+- **Every call ends in closing or by an exit.** A booking (`confirm_booking`) moves to closing and sets `closing_outcome` (`meeting_booked`, `callback_booked` or `escalated_to_human` from `booking`); closing ends the call with directive `close` when no question is open. Every other end (`opted_out`, `wrong_person`, `not_interested`, `disqualified`, `incomplete`, a handoff-exit `callback_booked`) is directive `exit_politely` (or `close` at the turn limit) with `stage="ended"`, so `outcome` is set exactly when the call is over.
+- **Opening.** Wrong person → `wrong_person`. Not a good time, or `wants_callback` in any stage before handoff → handoff with `booking="callback"` and directive `offer_callback` (a bookable time in the same turn books at once). Neither person nor time stated → `confirm_person` once, then discovery. Resistance → retry once, then `not_interested`. Directive `discover` asks the discovery question.
+- **Qualification.** Stop rules (`Q-STOP-1`), all → `disqualified`: a `territory` slot that does not contain one of `target_regions` (case-insensitive, "nationwide"-style answers fit; abbreviations are not guessed, the classifier spells regions out), checked on entering and during qualification; `interest="negative"` (not taking new lines); `wants_other_category` (category excluded). Resistance → `retry_once` about the slot just asked, then `not_interested`. Slots go in playbook order (`required_slots` only when rushed); a slot already known is `confirm_slot`, otherwise `ask_slot`; when none is left → pitch.
+- **Pitch → handoff** on a positive *or neutral* reply (the meeting is offered and can be declined); a negative reply or `agrees_to_meeting=False` → retry once, then `not_interested`.
+- **Handoff.** The proposal is `scheduler.propose_slot(now)`. A bookable partner time replaces it and books; a "yes" books the proposal. No usable time → `retry_once`, then `callback_booked` if the partner named a time that could not be booked (it becomes `proposed_slot`), else `incomplete`. A refusal → retry once, then `not_interested`.
+- **Facts.** `select_facts(brand, slots)` scores each fact by its tags against the filled slot names and the words of their values (plural "s" folded), best first, at most 3, padded in profile order to 2. `answer_question` gets the facts whose tags match the question's words, possibly none (the writer then offers the founder).
 
 **Scheduler (`calls/scheduler.py`, pure).** Proposes the next business day at least 24 h ahead, rounded up to the hour, inside 10:00–17:00 in `BrandProfile.timezone`. Parses the partner's `proposed_time` relative to the call time with a small rule set and no new dependency (weekday names, "tomorrow", "HH(:MM) am/pm"); an unparseable time is asked once more. Details (T-56): `propose_slot(now, tz)` is the first full hour ≥ 24 h after the call on a weekday with a start between 10:00 and 16:00 (a meeting ends by 17:00). `parse_time(text, now, tz)` needs both a day (`today`, `tomorrow`, a weekday name; a bare or "next" weekday is its next occurrence after today, so the same weekday means next week) and a time (`3pm`, `10:30am`, `14:00`, `at 11`, or morning 10:00 / noon 12:00 / afternoon 14:00; a bare hour 1–7 is pm); anything else, or a time in the past, is `None`. Days are read in brand time, not UTC. `is_bookable(slot, tz)` checks the weekday and 10:00–16:00 window for a partner-chosen time. An unknown IANA name falls back to UTC (`zone()`); `tzdata` comes in through the lock file on Windows.
 
