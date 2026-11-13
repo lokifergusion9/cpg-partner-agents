@@ -17,8 +17,7 @@ from partner_agents.schemas import BrandProfile, Lead, OutreachDraft, StageError
 
 logger = logging.getLogger(__name__)
 
-# The playbook is chosen by Settings from T-54 on (CALL_PLAYBOOK); until then there is one.
-DEFAULT_PLAYBOOK = "partner_intro"
+DEFAULT_PLAYBOOK = "partner_intro"  # Settings.call_playbook picks it (CALL_PLAYBOOK)
 PLAN_FACTS = 3
 
 
@@ -35,13 +34,18 @@ class MockVoiceCaller:
         return f"c_{uuid.uuid4().hex[:12]}"
 
 
-def build_call_plan(lead: Lead, profile: BrandProfile, provider: VoiceProvider) -> str:
+def build_call_plan(
+    lead: Lead,
+    profile: BrandProfile,
+    provider: VoiceProvider,
+    playbook: str = DEFAULT_PLAYBOOK,
+) -> str:
     """The plan a human reads before approving a call. Deterministic: no model is involved."""
     details = ", ".join(part for part in (lead.partner_type, lead.location) if part)
     mode = "simulate (nobody is dialled)" if provider == "mock" else "live call"
     lines = [
         f"Call plan for {lead.company_name} ({details or 'details unknown'})",
-        f"Playbook: {DEFAULT_PLAYBOOK}",
+        f"Playbook: {playbook}",
         f"Mode: {mode}",
         f"Goal: qualify the partner and, if there is a fit, book a meeting with "
         f"{profile.founder_name} of {profile.brand_name}.",

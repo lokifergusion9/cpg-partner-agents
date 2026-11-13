@@ -55,7 +55,11 @@ def make_call_plan(
                 drafts.append(record(lead, "skipped_ineligible"))  # a live call needs one
             else:
                 drafts.append(
-                    record(lead, "pending_approval", build_call_plan(lead, profile, provider))
+                    record(
+                        lead,
+                        "pending_approval",
+                        build_call_plan(lead, profile, provider, settings.call_playbook),
+                    )
                 )
         for draft in drafts:
             await repo.save_draft(draft)

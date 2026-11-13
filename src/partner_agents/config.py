@@ -185,6 +185,11 @@ class Settings(BaseSettings):
     vapi_phone_number_id: str | None = None
     voice_allowlist: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # Call agent (HLD §6.11). The playbook file is data/playbooks/<CALL_PLAYBOOK>.toml.
+    call_playbook: str = Field("partner_intro", pattern=r"^[a-z0-9_]{1,64}$")
+    call_max_turns: int = Field(30, ge=1)  # the smaller of this and the playbook's max_turns
+    call_reply_max_words: int = Field(60, ge=10)
+
     # Tracing: enabled only when both keys are set
     langfuse_public_key: SecretStr | None = None
     langfuse_secret_key: SecretStr | None = None

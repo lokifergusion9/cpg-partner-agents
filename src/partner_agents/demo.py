@@ -6,13 +6,35 @@ company, product or certification, and nothing in it comes from a third-party sc
 
 from partner_agents.schemas import ApprovedFact, BrandProfile
 
+# Tags are matched against the call agent's qualification slots (role, categories, territory,
+# accounts, volume) and their values, to pick the 2-3 facts a pitch may use (HLD §6.11).
 _FACTS = [
-    ("Our cookies are baked in small batches in a single bakery.", ["bakery", "quality"]),
-    ("Every flavour is made without wheat, and we say so on the front of the pack.", ["diet"]),
-    ("We sell in 6-count and 12-count boxes, with a shelf life of 9 months.", ["format", "shelf"]),
-    ("We ship from one warehouse and can fill a first order within two weeks.", ["fulfilment"]),
-    ("We are looking for partners who serve natural and specialty grocery shops.", ["channel"]),
-    ("We can send sample boxes to a buyer who asks for them.", ["samples"]),
+    ("Our cookies are baked in small batches in a single bakery.", ["categories", "quality"]),
+    (
+        "Every flavour is made without wheat, and we say so on the front of the pack.",
+        ["categories", "natural", "diet"],
+    ),
+    (
+        "We sell in 6-count and 12-count boxes, with a shelf life of 9 months.",
+        ["volume", "format", "shelf"],
+    ),
+    (
+        "We ship from one warehouse and can fill a first order within two weeks.",
+        ["volume", "territory", "fulfilment"],
+    ),
+    (
+        "We are looking for partners who serve natural and specialty grocery shops.",
+        ["accounts", "natural", "specialty", "grocery"],
+    ),
+    ("We can send sample boxes to a buyer who asks for them.", ["accounts", "samples"]),
+    (
+        "Our founder meets every new partner before a first order is placed.",
+        ["role", "founder"],
+    ),
+    (
+        "We are focused on the West Coast: California, Oregon and Washington.",
+        ["territory", "california", "oregon", "washington"],
+    ),
 ]
 
 SAMPLE_BRAND = BrandProfile(

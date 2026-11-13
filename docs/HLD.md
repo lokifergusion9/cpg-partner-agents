@@ -195,6 +195,7 @@ class PlaybookRule(BaseModel):
     kind: Literal["must", "never"]
     text: str                              # shown to the caller model
     check: Literal["code", "judge", "none"]   # who verifies it (ADR-020)
+    check_id: str | None = None            # check="code" only: a C-* id from §6.11, or C-FLOW
 
 class PlaybookStage(BaseModel):
     name: CallStage
@@ -209,7 +210,7 @@ class CallPlaybook(BaseModel):             # loaded from data/playbooks/<id>.tom
     universal_rules: list[PlaybookRule]
     stages: list[PlaybookStage]            # validated: the six stages, in order, unique rule ids
     banned_phrases: list[str]              # "guaranteed", "100%", "discount", …
-    max_turns: int = 30
+    max_turns: int = Field(30, ge=1)       # the call uses min(max_turns, CALL_MAX_TURNS)
 
 class TurnSignals(BaseModel):              # classifier output for one partner turn
     right_person: bool | None = None
@@ -234,7 +235,7 @@ class Directive(BaseModel):                # what the stage machine tells the wr
                     "confirm_booking", "disclose_ai", "close", "exit_politely"]
     slot: str | None = None
     fact_ids: list[str] = []               # approved facts the pitch may use
-    proposed_slot: datetime | None = None
+    proposed_slot: AwareDatetime | None = None
 
 class RuleCheck(BaseModel):
     rule_id: str; passed: bool; by: Literal["code", "judge"]
@@ -252,7 +253,7 @@ class CallProgress(BaseModel):             # the stage machine's state (pure dat
     stage: CallStage = "opening"
     slots: dict[str, str] = {}
     retries_used: dict[str, int] = {}      # per stage; at most 1 (rule U-RETRY-1)
-    proposed_slot: datetime | None = None
+    proposed_slot: AwareDatetime | None = None
     turns: int = 0
     outcome: CallOutcome | None = None
 
@@ -261,12 +262,14 @@ class CallRecord(BaseModel):
     playbook_id: str; playbook_version: str; prompt_version: str
     mode: CallMode; persona_id: str | None = None
     progress: CallProgress
-    turns: list[CallTurn]
-    meeting_at: datetime | None = None
+    turns: list[CallTurn] = []
+    meeting_at: AwareDatetime | None = None
     followup_draft_id: str | None = None   # confirmation email, pending approval
     started_at: AwareDatetime; finished_at: AwareDatetime | None = None
-    tokens: dict[str, int]; providers: dict[str, str]
+    tokens: dict[str, int] = {}; providers: dict[str, str] = {}
 ```
+
+**Playbook validation (`calls/playbook.py`, T-54).** `load_playbook(id)` reads `data/playbooks/<id>.toml` with `tomllib` (the id must match `[a-z0-9_]{1,64}`, so it cannot leave the directory, and must equal the file's `id`), validates it against `CallPlaybook` and then checks: the six stages `opening → discovery → qualification → pitch → handoff → closing` in this order; unique rule ids across universal and stage rules; every `check="code"` rule has a `check_id` in `CHECK_IDS` (the eight reply checks of §6.11 plus `C-FLOW`) and no other rule has one; slots only in qualification (at least one), no slot twice, `required_slots ⊆ slots`; stage goals and fallback lines use only the fields `{brand_name}`, `{founder_name}`, `{category}`, `{sign_off}`; no blank banned phrase. Every broken rule is reported in one `PlaybookError`. The sample brand's fact tags name the qualification slots (`role`, `categories`, `territory`, `accounts`, `volume`) plus value keywords such as `natural` or `oregon`, for fact selection.
 
 ## 5. Agent graph (LangGraph)
 
@@ -476,7 +479,7 @@ The reasons for this design are in ADR-007. In short: a lead must be tied to one
   - `DEMO_MODE` forces `outbox` in `Settings`, so a demo never builds a Gmail client (`AppDeps.gmail` is `None` in outbox mode).
   - Failures: a draft that is not `approved`, a missing Gmail client, a subject or address with a line break (header injection, refused by `EmailMessage`) and a Gmail error all give status `failed` and a `StageError` (`not_approved`, `gmail_not_configured`, `invalid_message`, `gmail_error`). The error message is the exception type, or our own `GmailError` text (for example "Gmail send failed with HTTP 403"); never the mail content, a recipient or the response body.
   - **Gmail client (ADR-027).** `HttpxGmailClient` makes two bearer-token POSTs (`/drafts`, `/messages/send`) with a 20 s timeout and **no retry**: a send that timed out may have gone out, so a retry could deliver it twice. `load_access_token()` refreshes an expired token and saves it back. `python -m partner_agents.cli gmail-auth` runs the browser flow once (`authorize()`). `GMAIL_CREDENTIALS_PATH` and `GMAIL_TOKEN_PATH` must resolve outside the repository (`ensure_outside_repo`).
-- **Voice (`voice.py`, `graph/call_plan.py`).** `call_plan` makes one voice `OutreachDraft` per selected lead (deterministic, no model): the body is the call plan (company, playbook id, mode, goal, up to 3 approved facts; the playbook id is a constant until T-54 adds `CALL_PLAYBOOK`), the recipient is the lead's phone (empty is fine for the mock) and the status is `pending_approval`. It needs a brand profile, like `chase_draft`. With a live provider a lead without a verified phone becomes `skipped_ineligible`. Voice drafts then follow the same `approval_gate` and `chase_dispatch` as email. `dispatch_voice()` starts only an `approved` voice draft: the `VoiceCaller` protocol (`start(draft) -> call_id`) is implemented by `MockVoiceCaller` (default), which creates a call id, dials nobody and sets status `call_created`; the ids are returned in `call_ids`. T-58 makes it create and run a real `CallRecord` (§6.11). For any provider other than `mock` the number must be on `VOICE_ALLOWLIST` (checked first, spacing ignored, an empty list allows nobody), otherwise `failed` / `not_allowlisted`; if it is allowed but no caller exists (`VapiVoiceCaller` is stretch) the result is `failed` / `voice_not_configured`. Other failure codes: `not_approved`, `voice_error` (exception type only). `DEMO_MODE` forces `VOICE_PROVIDER=mock`.
+- **Voice (`voice.py`, `graph/call_plan.py`).** `call_plan` makes one voice `OutreachDraft` per selected lead (deterministic, no model): the body is the call plan (company, playbook id, mode, goal, up to 3 approved facts; the playbook id is `CALL_PLAYBOOK`), the recipient is the lead's phone (empty is fine for the mock) and the status is `pending_approval`. It needs a brand profile, like `chase_draft`. With a live provider a lead without a verified phone becomes `skipped_ineligible`. Voice drafts then follow the same `approval_gate` and `chase_dispatch` as email. `dispatch_voice()` starts only an `approved` voice draft: the `VoiceCaller` protocol (`start(draft) -> call_id`) is implemented by `MockVoiceCaller` (default), which creates a call id, dials nobody and sets status `call_created`; the ids are returned in `call_ids`. T-58 makes it create and run a real `CallRecord` (§6.11). For any provider other than `mock` the number must be on `VOICE_ALLOWLIST` (checked first, spacing ignored, an empty list allows nobody), otherwise `failed` / `not_allowlisted`; if it is allowed but no caller exists (`VapiVoiceCaller` is stretch) the result is `failed` / `voice_not_configured`. Other failure codes: `not_approved`, `voice_error` (exception type only). `DEMO_MODE` forces `VOICE_PROVIDER=mock`.
 - `DEMO_MODE=true` forces `outbox` and `mock` regardless of other settings.
 
 ### 6.10 Memory
@@ -544,6 +547,7 @@ The first agent turn (opening) skips `call_classify`. The sub-graph uses its own
 | `C-PII` | No email address or phone number other than the brand's own |
 | `C-STAGE` | No booking language before the handoff stage; no qualification question after an opt-out |
 | `C-SIGNOFF` | The closing turn contains `BrandProfile.sign_off` |
+| `C-FLOW` | Not a reply check: the playbook rule is enforced by the stage machine (`calls/stages.py`), and the eval verifies it through outcomes and transcripts |
 
 Soft rules (empathy, not pushy, answers the actual question) have `check="judge"` and are scored only in the eval (ADR-020), never at run time.
 

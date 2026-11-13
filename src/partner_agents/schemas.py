@@ -1,7 +1,6 @@
-"""Domain models shared across modules (HLD §4).
+"""Domain models shared across modules (HLD §4, §4.1).
 
-The call-agent models of HLD §4.1 arrive with T-54. This module imports nothing from the
-rest of the package, so every layer can depend on it.
+This module imports nothing from the rest of the package, so every layer can depend on it.
 """
 
 from typing import Annotated, Literal
@@ -222,3 +221,135 @@ class RunRecord(BaseModel):
     errors: list[StageError]
     trace_url: str | None = None
     providers: dict[str, str] = {}  # role -> "provider:model" that actually answered (ADR-018)
+
+
+# --- Call agent (HLD §4.1, §6.11) ---------------------------------------------------------
+
+CallStage = Literal["opening", "discovery", "qualification", "pitch", "handoff", "closing", "ended"]
+CallOutcome = Literal[
+    "meeting_booked",
+    "callback_booked",
+    "not_interested",
+    "disqualified",
+    "opted_out",
+    "wrong_person",
+    "escalated_to_human",
+    "incomplete",
+]
+CallMode = Literal["simulate", "live_text", "live_voice", "vapi"]
+
+
+class PlaybookRule(BaseModel):
+    id: str  # stable, e.g. "U-OPT-1", "Q-2"; used in checks and eval
+    kind: Literal["must", "never"]
+    text: str  # shown to the caller model
+    check: Literal["code", "judge", "none"]  # who verifies it (ADR-020)
+    check_id: str | None = None  # check="code" only: the C-* check that enforces it
+
+
+class PlaybookStage(BaseModel):
+    name: CallStage
+    goal: str
+    rules: list[PlaybookRule]
+    slots: list[str] = []  # qualification only, in asking order
+    required_slots: list[str] = []  # asked even when the partner is in a rush
+    fallback_line: str  # used when a reply fails its checks twice
+
+
+class CallPlaybook(BaseModel):  # loaded from data/playbooks/<id>.toml (calls/playbook.py)
+    id: str
+    version: str
+    language: str = "en"
+    universal_rules: list[PlaybookRule]
+    stages: list[PlaybookStage]  # validated: the six stages, in order, unique rule ids
+    banned_phrases: list[str]  # "guaranteed", "100%", "discount", ...
+    max_turns: int = Field(30, ge=1)
+
+
+class TurnSignals(BaseModel):  # classifier output for one partner turn
+    right_person: bool | None = None
+    good_time: bool | None = None
+    interest: Literal["positive", "negative", "unsure"] | None = None
+    opt_out: bool = False  # "don't call me again"
+    wants_human: bool = False
+    asks_if_ai: bool = False
+    distressed: bool = False
+    resistance: bool = False  # refuses to share / rejects the suggestion
+    wants_callback: bool = False
+    in_rush: bool = False  # ask only the required slots
+    wants_other_category: str | None = None  # acknowledge, offer to pass on, exit politely
+    agrees_to_meeting: bool | None = None
+    proposed_time: str | None = None  # raw text; parsed by calls/scheduler.py
+    question: str | None = None  # a question the partner asked
+    slot_values: dict[str, str] = {}  # qualification slots answered in this turn
+
+
+class Directive(BaseModel):  # what the stage machine tells the writer to do next
+    action: Literal[
+        "open",
+        "confirm_person",
+        "offer_callback",
+        "ask_slot",
+        "confirm_slot",
+        "acknowledge",
+        "answer_question",
+        "pitch",
+        "retry_once",
+        "propose_slot",
+        "confirm_booking",
+        "disclose_ai",
+        "close",
+        "exit_politely",
+    ]
+    slot: str | None = None
+    fact_ids: list[str] = []  # approved facts the pitch may use
+    proposed_slot: AwareDatetime | None = None
+
+
+class RuleCheck(BaseModel):
+    rule_id: str
+    passed: bool
+    by: Literal["code", "judge"]
+    detail: str | None = None
+
+
+class CallTurn(BaseModel):
+    index: int
+    speaker: Literal["agent", "partner"]
+    text: str
+    stage: CallStage
+    signals: TurnSignals | None = None  # partner turns only
+    directive: Directive | None = None  # agent turns only
+    checks: list[RuleCheck] = []  # agent turns only
+    regenerated: bool = False
+    used_fallback: bool = False
+
+
+class CallProgress(BaseModel):  # the stage machine's state (pure data)
+    stage: CallStage = "opening"
+    slots: dict[str, str] = {}
+    retries_used: dict[str, int] = {}  # per stage; at most 1 (rule U-RETRY-1)
+    proposed_slot: AwareDatetime | None = None
+    turns: int = 0
+    outcome: CallOutcome | None = None
+
+
+class CallRecord(BaseModel):
+    id: str
+    user_id: str
+    lead_id: str
+    run_id: str
+    draft_id: str
+    playbook_id: str
+    playbook_version: str
+    prompt_version: str
+    mode: CallMode
+    persona_id: str | None = None
+    progress: CallProgress
+    turns: list[CallTurn] = []
+    meeting_at: AwareDatetime | None = None
+    followup_draft_id: str | None = None  # confirmation email, pending approval
+    started_at: AwareDatetime
+    finished_at: AwareDatetime | None = None
+    tokens: dict[str, int] = {}
+    providers: dict[str, str] = {}
