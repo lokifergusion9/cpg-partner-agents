@@ -17,6 +17,7 @@ from partner_agents.api.routes import open_router, router
 from partner_agents.config import Settings, get_settings
 from partner_agents.graph.build import AppDeps, Context, build_app_deps, build_graph
 from partner_agents.observability import configure_logging
+from partner_agents.retrieval.store import expire_old_chunks
 from partner_agents.ui.app import build_ui
 
 
@@ -33,6 +34,8 @@ def create_app(
         ensure_indexes = getattr(owned.repo, "ensure_indexes", None)
         if ensure_indexes is not None:  # MongoDB: indexes and TTLs (HLD §8.1)
             await ensure_indexes()
+        # Qdrant has no TTL: drop the chunks of pages that have expired from MongoDB (T-35).
+        await expire_old_chunks(owned.scout.store, owned.clock(), owned.settings.data_ttl_days)
         if owned.rate_limiter is None:
             owned.rate_limiter = RateLimiter(owned.settings.rate_limit_runs_per_hour)
         app.state.ctx = Context(deps=owned, graph=build_graph(owned))

@@ -691,7 +691,7 @@ Expiry is decided at read time against an injectable clock, because a Mongo TTL 
 | `web_chunks` | 384, cosine | `run_id, url, title, chunk_index, text, has_contact_pattern, fetched_at` | `run_id`, `url`, `fetched_at` |
 | `cpg_kb` | 384, cosine | `doc_id, title, source_url, topic, chunk_index, text` | `topic` |
 
-A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_TTL_DAYS` (`VectorStore.cleanup(older_than)`, wired in T-35). `fetched_at` is stored as an RFC 3339 string and has a datetime payload index. A point id is a UUID5 of `(run_id, url, chunk_index)`, so indexing a page twice replaces its points. The local store (`QDRANT_URL` empty) accepts payload indexes but ignores them.
+A cleanup job runs on startup (the FastAPI lifespan, after the MongoDB indexes) and deletes `web_chunks` points older than `DATA_TTL_DAYS` (`expire_old_chunks(store, now, ttl_days)` calls `VectorStore.cleanup(older_than)`, T-35). It runs once per start, not on a timer, and a failure is logged and ignored so a slow or unreachable Qdrant cannot stop the app. `fetched_at` is stored as an RFC 3339 string and has a datetime payload index. A point id is a UUID5 of `(run_id, url, chunk_index)`, so indexing a page twice replaces its points. The local store (`QDRANT_URL` empty) accepts payload indexes but ignores them.
 
 ## 9. LLM layer (`llm.py`)
 

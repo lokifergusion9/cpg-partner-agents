@@ -13,6 +13,7 @@ from partner_agents.retrieval.chunking import Chunk
 from partner_agents.retrieval.store import (
     WEB_CHUNKS,
     VectorStore,
+    expire_old_chunks,
     make_client,
     point_id,
 )
@@ -205,6 +206,30 @@ def test_cleanup_cutoff_is_exclusive(store: VectorStore) -> None:
     cutoff = NOW - timedelta(days=7)
     run(store.upsert_chunks("r_1", A, "Acme", A_CHUNKS, cutoff))
     assert run(store.cleanup(cutoff)) == 0
+
+
+def test_the_startup_job_uses_the_ttl_in_days(store: VectorStore) -> None:
+    async def go() -> tuple[int, int]:
+        await store.upsert_chunks("r_old", A, "Acme", A_CHUNKS, NOW - timedelta(days=7, hours=1))
+        await store.upsert_chunks("r_new", B, "Beta", B_CHUNKS, NOW - timedelta(days=6, hours=23))
+        return await expire_old_chunks(store, NOW, 7), await expire_old_chunks(store, NOW, 7)
+
+    assert run(go()) == (3, 0)  # the second pass finds nothing left
+    assert len(run(store.search("pizza", "r_new", B, k=10))) == 2
+
+
+def test_a_longer_ttl_keeps_what_a_shorter_one_removes(store: VectorStore) -> None:
+    run(store.upsert_chunks("r_1", A, "Acme", A_CHUNKS, NOW - timedelta(days=10)))
+    assert run(expire_old_chunks(store, NOW, 30)) == 0
+    assert run(expire_old_chunks(store, NOW, 7)) == 3
+
+
+def test_the_startup_job_never_raises(store: VectorStore) -> None:
+    async def broken(older_than: datetime) -> int:
+        raise ConnectionError("qdrant is down")
+
+    store.cleanup = broken  # type: ignore[method-assign]
+    assert run(expire_old_chunks(store, NOW, 7)) == 0
 
 
 # --- client selection ---------------------------------------------------------------

@@ -11,7 +11,7 @@ import logging
 import uuid
 import warnings
 from collections.abc import Collection, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from pydantic import HttpUrl, TypeAdapter
 from qdrant_client import AsyncQdrantClient, models
@@ -173,6 +173,20 @@ class VectorStore:
             )
             logger.info("expired chunks removed", extra={"count": count})
         return count
+
+
+async def expire_old_chunks(store: VectorStore, now: datetime, ttl_days: int) -> int:
+    """The startup job (T-35): delete ``web_chunks`` points older than ``ttl_days``.
+
+    Pages expire through the MongoDB TTL index; Qdrant has no TTL, so this does it for the
+    chunks. Returns how many were removed. A failure is logged and counts as 0: a slow or
+    unreachable vector store must not stop the app from starting.
+    """
+    try:
+        return await store.cleanup(now - timedelta(days=ttl_days))
+    except Exception as exc:
+        logger.warning("chunk cleanup failed", extra={"error_type": type(exc).__name__})
+        return 0
 
 
 CPG_KB = "cpg_kb"
