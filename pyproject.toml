@@ -37,6 +37,10 @@ speech = [
     "faster-whisper>=1.1.0",
     "piper-tts>=1.3.0",
 ]
+# Langfuse tracing (ADR-029). Not installed by default: `uv sync --extra tracing`.
+tracing = [
+    "langfuse>=4.0.0",
+]
 
 [dependency-groups]
 dev = [
@@ -88,10 +92,10 @@ plugins = ["pydantic.mypy"]
 module = ["lxml", "lxml.*"]
 ignore_missing_imports = true
 
-# The optional speech extra (ADR-021) is not installed in the default environment, and ships no
-# type information.
+# The optional speech (ADR-021) and tracing (ADR-029) extras are not installed in the default
+# environment.
 [[tool.mypy.overrides]]
-module = ["faster_whisper", "faster_whisper.*", "piper", "piper.*"]
+module = ["faster_whisper", "faster_whisper.*", "piper", "piper.*", "langfuse", "langfuse.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]

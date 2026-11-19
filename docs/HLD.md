@@ -755,7 +755,7 @@ A cleanup job runs on startup and deletes `web_chunks` points older than `DATA_T
 | `GMAIL_CREDENTIALS_PATH` / `GMAIL_TOKEN_PATH` | `~/.partner_agents/gmail_{credentials,token}.json` | OAuth installed-app files; blank → default (never the repo) |
 | `VOICE_PROVIDER` | `mock` | `mock` \| `vapi` |
 | `VAPI_API_KEY` / `VAPI_PHONE_NUMBER_ID` / `VOICE_ALLOWLIST` | — | stretch |
-| `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` / `_HOST` | — | tracing is enabled when set |
+| `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` / `_HOST` | — | tracing is enabled when both keys are set; needs `uv sync --extra tracing` (ADR-029) |
 | `LOG_LEVEL` | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR`; contact values are redacted at `INFO`+ |
 | `STRICT_NODES` | `false` | `true` makes `timed_node` re-raise unexpected exceptions instead of recording a `StageError` (tests, debugging) |
 | `APP_API_KEY` | — | protects `/api` |
@@ -802,7 +802,7 @@ Every node is wrapped by a decorator (`observability.timed_node`) that records `
 - **Run context.** `run_id` in a contextvar. JSON logs include `run_id`, `node` and `duration_ms`.
 - **Redaction.** A handler filter (`observability.RedactionFilter`) replaces configured secret values and well-known key shapes at every level, and emails and phone numbers at `INFO` and above, in the message, format args, `extra` fields and exception text.
 - **Timings.** The node decorator writes `timings_ms`. The `runs` collection stores totals, tokens per role and prompt versions.
-- **Tracing.** When the Langfuse keys are set, a callback handler is attached to `graph.ainvoke`. Node names become spans, and the prompt version is added to metadata. The trace URL is saved to the `RunRecord`.
+- **Tracing (T-33, ADR-029).** When both Langfuse keys are set and the `tracing` extra is installed (`uv sync --extra tracing`), `tracing.py` creates one Langfuse `CallbackHandler` per run and `graph/build._drive` adds it to the `astream` config, so every node is a span. Trace metadata holds the session (the thread id), the anonymous user id, the trace name (`chat_turn`, `approval_resume`, `call_turn`), the `run_id` and `PROMPT_VERSIONS` (every prompt module and its version); never a contact value or an email body. The trace URL is resolved after the run and saved to `RunRecord.trace_url` (`GET /api/runs/{id}` returns it with `tokens` and `timings_ms`); a resumed approval keeps the first URL. A call turn is traced too, with the call id as the session. Tracing can never fail a run: start and finish swallow every error and the URL stays `None`. Without keys, or without the extra (a warning is logged), the app runs untraced. Langfuse sees prompts and replies, so a traced Space shows scraped page text and partner words in its dashboard (§12).
 - **Cost.** Tokens are recorded per role. `config.PRICE_TABLE` estimates the would-be cost at paid rates, for reporting only.
 - **UI.** The Runs tab shows the timeline, errors and the trace link.
 

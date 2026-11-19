@@ -8,12 +8,12 @@ it returns ``{"raw", "parsed", "parsing_error"}`` and does not raise on invalid 
 import hashlib
 import math
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import BaseCallbackHandler, CallbackManagerForLLMRun
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, BaseMessage
@@ -106,6 +106,61 @@ class HashingEmbedder:
 
     async def embed_query(self, text: str) -> list[float]:
         return self._vector(text)
+
+
+class RecordingHandler(BaseCallbackHandler):
+    """A LangChain callback handler that remembers the names of the chains (graph nodes) run."""
+
+    def __init__(self) -> None:
+        self.chains: list[str] = []
+
+    def on_chain_start(self, serialized: dict[str, Any] | None, inputs: Any, **kwargs: Any) -> None:
+        if kwargs.get("name"):
+            self.chains.append(str(kwargs["name"]))
+
+
+class FakeRunTrace:
+    def __init__(self, url: str | None, metadata: dict[str, Any]) -> None:
+        self._url, self._metadata = url, metadata
+        self.handler = RecordingHandler()  # stands in for Langfuse's callback handler
+        self.finished = False
+
+    @property
+    def callbacks(self) -> list[Any]:
+        return [self.handler]
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        return self._metadata
+
+    def finish(self) -> str | None:
+        self.finished = True
+        return self._url
+
+
+class FakeTracing:
+    """Offline stand-in for ``tracing.LangfuseTracing``: records each trace it starts."""
+
+    def __init__(self, *, fail_start: bool = False, fail_finish: bool = False) -> None:
+        self.runs: list[FakeRunTrace] = []
+        self.fail_start, self.fail_finish = fail_start, fail_finish
+        self.shut_down = False
+
+    def start(
+        self, *, name: str, session_id: str, user_id: str, metadata: Mapping[str, Any]
+    ) -> FakeRunTrace:
+        if self.fail_start:
+            raise RuntimeError("tracing is down")
+        url = None if self.fail_finish else f"https://trace.example/{name}/{len(self.runs) + 1}"
+        trace = FakeRunTrace(
+            url, {"langfuse_session_id": session_id, "langfuse_user_id": user_id, **metadata}
+        )
+        trace.metadata["name"] = name
+        self.runs.append(trace)
+        return trace
+
+    def shutdown(self) -> None:
+        self.shut_down = True
 
 
 class FakeSpeech:

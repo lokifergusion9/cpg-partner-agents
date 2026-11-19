@@ -52,6 +52,15 @@ from partner_agents.retrieval.store import KnowledgeStore, VectorStore, make_cli
 from partner_agents.schemas import ApprovalDecision, RunRecord, StageError
 from partner_agents.storage.mongo import build_repository
 from partner_agents.storage.repo import Repository
+from partner_agents.tracing import (
+    RunTrace,
+    Tracing,
+    TracingUnavailable,
+    build_tracing,
+    finish_trace,
+    start_trace,
+    traced_config,
+)
 from partner_agents.web.fetch import Fetcher
 from partner_agents.web.search import SearchService, build_providers
 
@@ -69,6 +78,8 @@ _PROMPTS: dict[str, tuple[str, str]] = {
     "scout_extract": ("scout", scout_prompts.PROMPT_VERSION),
     "chase_draft": ("chase", chase_prompts.PROMPT_VERSION),
 }
+# Every prompt module and its version, for the trace metadata (T-33).
+PROMPT_VERSIONS = dict(_PROMPTS.values())
 
 
 @dataclass
@@ -96,8 +107,12 @@ class AppDeps:
     calls: CallDeps | None = None
     # Local speech for ``live_voice`` (ADR-021); None unless SPEECH_ENABLED and it loaded.
     speech: SpeechBackend | None = None
+    # Langfuse, when both keys are set and the tracing extra is installed (ADR-029).
+    tracing: Tracing | None = None
 
     async def aclose(self) -> None:
+        if self.tracing is not None:
+            await asyncio.to_thread(self.tracing.shutdown)  # send what is still queued
         await self.scout.fetcher.aclose()
         await self.scout.store.close()  # the knowledge store shares this Qdrant client
         close_repo = getattr(self.repo, "aclose", None)
@@ -136,6 +151,12 @@ def build_app_deps(settings: Settings) -> AppDeps:
     except SpeechUnavailable as exc:  # the app still runs, in text only
         logger.warning("speech is off: %s", exc)
         speech = None
+    try:
+        tracing = build_tracing(settings)
+    except TracingUnavailable as exc:  # the app still runs, untraced
+        logger.warning("tracing is off: %s", exc)
+        tracing = None
+    calls.tracing = tracing
     return AppDeps(
         settings=settings,
         repo=repo,
@@ -148,6 +169,7 @@ def build_app_deps(settings: Settings) -> AppDeps:
         checkpointer=build_checkpointer(settings),
         calls=calls,
         speech=speech,
+        tracing=tracing,
     )
 
 
@@ -278,6 +300,19 @@ class _Observed:
     prompt_versions: dict[str, str] = field(default_factory=dict)
     tokens: dict[str, int] = field(default_factory=dict)
     providers: dict[str, str] = field(default_factory=dict)
+    trace_url: str | None = None
+
+
+def _start_trace(
+    deps: "AppDeps", name: str, thread_id: str, user_id: str, run_id: str
+) -> RunTrace | None:
+    return start_trace(
+        deps.tracing,
+        name=name,
+        session_id=thread_id,
+        user_id=user_id,
+        metadata={"run_id": run_id, "prompt_versions": PROMPT_VERSIONS},
+    )
 
 
 async def _drive(
@@ -286,11 +321,16 @@ async def _drive(
     graph_input: Any,
     run_id: str,
     on_node: Callable[[str], None] | None = None,
+    trace: RunTrace | None = None,
 ) -> _Observed:
-    """Stream the graph once (a new turn or a resume) and collect what the RunRecord needs."""
+    """Stream the graph once (a new turn or a resume) and collect what the RunRecord needs.
+
+    With a ``trace`` its callback handler is attached, so every node becomes a span (T-33).
+    """
     seen = _Observed()
+    traced = cast(RunnableConfig, traced_config(config, trace))
     with run_context(run_id), track_usage() as tokens, track_providers() as providers:
-        async for chunk in graph.astream(graph_input, config, stream_mode="updates"):
+        async for chunk in graph.astream(graph_input, traced, stream_mode="updates"):
             for node, update in chunk.items():
                 if not isinstance(update, dict):
                     continue  # an interrupt marker, not a node update
@@ -302,6 +342,7 @@ async def _drive(
                     module, version = _PROMPTS[node]
                     seen.prompt_versions[module] = version
     seen.tokens, seen.providers = dict(tokens), dict(providers)
+    seen.trace_url = await finish_trace(trace)
     return seen
 
 
@@ -344,7 +385,8 @@ async def run_turn(
         "retry_after_s": None,  # a refusal in an earlier turn must not stick
     }
     started = deps.clock()
-    seen = await _drive(graph, config, turn_input, run_id, on_node)
+    trace = _start_trace(deps, "chat_turn", thread_id, user_id, run_id)
+    seen = await _drive(graph, config, turn_input, run_id, on_node, trace)
     route = (await graph.aget_state(config)).values.get("route")
     run = RunRecord(
         run_id=run_id,
@@ -358,6 +400,7 @@ async def run_turn(
         prompt_versions=seen.prompt_versions,
         errors=seen.errors,
         providers=seen.providers,
+        trace_url=seen.trace_url,
     )
     await deps.repo.save_run(run)
     return await _result(graph, config, run)
@@ -384,7 +427,8 @@ async def resume_turn(
     if snapshot.values.get("user_id") != user_id:
         raise NothingToApprove(f"thread {thread_id} has no drafts waiting for approval")
     run_id = str(snapshot.values["run_id"])
-    seen = await _drive(graph, config, Command(resume=decision), run_id, on_node)
+    trace = _start_trace(deps, "approval_resume", thread_id, user_id, run_id)
+    seen = await _drive(graph, config, Command(resume=decision), run_id, on_node, trace)
     run = await deps.repo.get_run(run_id)
     if run is None:  # the first part was never saved; should not happen
         raise NothingToApprove(f"run {run_id} is unknown")
@@ -397,6 +441,7 @@ async def resume_turn(
                 k: run.tokens.get(k, 0) + seen.tokens.get(k, 0) for k in {*run.tokens, *seen.tokens}
             },
             "providers": {**run.providers, **seen.providers},
+            "trace_url": run.trace_url or seen.trace_url,  # the resume has its own trace
         }
     )
     await deps.repo.save_run(run)

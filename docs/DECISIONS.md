@@ -248,6 +248,16 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
   - `str` for `sender_email`: lets a typo through to the Gmail API at dispatch time.
 - **Consequences:** One small pure-Python dependency, plus `dnspython` and `idna` as its transitive dependencies.
 
+## ADR-029: Langfuse for tracing, as an optional extra
+- **Status:** Accepted · 2026-11-19 (T-33)
+- **Context:** Runs need a trace with every node, the prompt versions and token counts, and the app must still run without any tracing account (HLD §13, free tier, offline tests).
+- **Decision:** Use the Langfuse Python SDK's LangChain / LangGraph `CallbackHandler`, attached to the graph run only when both `LANGFUSE_*` keys are set. The `langfuse` package is an **optional extra** (`uv sync --extra tracing`) imported only then, so the default install and the tests do not carry it (same pattern as ADR-021). `observability`-side code talks to a small `Tracing` protocol (`tracing.py`), so tests use a fake and a tracing failure can never fail a run: every call is wrapped and falls back to "no trace". The trace URL is saved on the `RunRecord`. Nothing that is a contact value or an email body is added to trace metadata by us.
+- **Alternatives:**
+  - LangSmith: tied to the LangChain account and has a smaller free tier.
+  - Our own span table in MongoDB: no UI, more code.
+  - OpenTelemetry only: a collector to run, no LLM-specific views.
+- **Consequences:** Langfuse sees the prompts and the model replies, which contain scraped page text and, for calls, partner words. The README says so, and the public Space has tracing off unless its owner sets the keys. A trace needs a network call to resolve its URL (done once per run, with a timeout, and skipped on failure).
+
 ## ADR-028: PyMongo's async client and the official LangGraph MongoDB saver
 - **Status:** Accepted · 2026-11-12
 - **Context:** T-27 needs a `MongoRepository` for the `Repository` protocol (HLD §8.1) and a durable checkpointer, so that a conversation that waits for approval survives a restart of the single-worker Space. Atlas M0 is the free tier we already chose (ADR-005).

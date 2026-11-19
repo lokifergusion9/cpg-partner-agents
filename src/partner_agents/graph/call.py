@@ -32,6 +32,7 @@ from partner_agents.config import Settings
 from partner_agents.graph.chase import new_draft_id
 from partner_agents.llm import track_providers, track_usage
 from partner_agents.outreach.policy import enforce_body
+from partner_agents.prompts.caller import PROMPT_VERSION as CALLER_PROMPT_VERSION
 from partner_agents.prompts.caller import format_slot
 from partner_agents.schemas import (
     BrandProfile,
@@ -46,6 +47,7 @@ from partner_agents.schemas import (
     TurnSignals,
 )
 from partner_agents.storage.repo import Repository
+from partner_agents.tracing import Tracing, start_trace, traced_config
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,7 @@ class CallDeps:
     classifier: BaseChatModel
     caller: BaseChatModel
     simulator: BaseChatModel | None = None  # plays the partner in ``simulate`` mode
+    tracing: Tracing | None = None  # one Langfuse trace per call turn, session = the call id
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
 
@@ -256,6 +259,14 @@ async def run_call_turn(
     if brand is None:
         raise CallNotActive("profile_not_found", "Save a brand profile before calling.")
     config: RunnableConfig = {"configurable": {"thread_id": call_id}}
+    trace = start_trace(
+        deps.tracing,
+        name="call_turn",
+        session_id=call_id,
+        user_id=user_id,
+        metadata={"call_id": call_id, "prompt_versions": {"caller": CALLER_PROMPT_VERSION}},
+    )
+    config = cast(RunnableConfig, traced_config(config, trace))
     graph_input: CallState = {
         "record": record,
         "brand": brand,
