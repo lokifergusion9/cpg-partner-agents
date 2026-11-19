@@ -165,6 +165,9 @@ class Settings(BaseSettings):
     # Fetching
     fetch_timeout_s: float = Field(10, gt=0)
     fetch_max_bytes: int = Field(2_000_000, gt=0)
+    # A page scoring at or above this is excluded as a prompt injection (web/safety.py, T-32).
+    # Above 1 switches the heuristic off (ablation A7).
+    injection_threshold: float = Field(0.6, gt=0)
     fetch_concurrency: int = Field(8, ge=1)
 
     # Verification

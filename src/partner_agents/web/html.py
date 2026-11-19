@@ -42,6 +42,19 @@ class ExtractedPage:
     main_text: str
     contact_text: str
     contact_link: str | None
+    hidden_text: str = ""  # text a reader cannot see (CSS) but a model would read; for T-32
+
+
+# Inline styles that hide an element or make its text invisible (spaces are removed first).
+_HIDING_STYLES = (
+    "display:none",
+    "visibility:hidden",
+    "text-indent:-9999",
+    "left:-9999",
+    "color:#fff",
+    "color:white",
+)
+MAX_HIDDEN_CHARS = 4_000
 
 
 def _words(text: str) -> str:
@@ -78,6 +91,32 @@ def _contact_elements_text(doc: lxml_html.HtmlElement) -> list[str]:
         if text and text not in chunks:
             chunks.append(text)
     return chunks
+
+
+def _hidden_text(doc: lxml_html.HtmlElement) -> str:
+    """The text of elements hidden with inline CSS or the ``hidden`` attribute."""
+    chunks: list[str] = []
+    hidden: set[lxml_html.HtmlElement] = set()
+    for element in doc.iter():
+        if not isinstance(element.tag, str):
+            continue  # a comment or a processing instruction
+        style = "".join(element.get("style", "").lower().split())
+        is_hidden = element.get("hidden") is not None or _hides(style)
+        if not is_hidden or any(parent in hidden for parent in element.iterancestors()):
+            continue  # not hidden, or already inside a hidden element (its text is counted)
+        hidden.add(element)
+        text = _words(element.text_content())
+        if text:
+            chunks.append(text)
+    return "\n".join(chunks)[:MAX_HIDDEN_CHARS]
+
+
+# "font-size:0" and "opacity:0" hide text, "font-size:0.9em" and "opacity:0.8" do not.
+_ZERO = re.compile(r"(font-size|opacity):0(?![.\d])")
+
+
+def _hides(style: str) -> bool:
+    return any(rule in style for rule in _HIDING_STYLES) or _ZERO.search(style) is not None
 
 
 def _link_targets(doc: lxml_html.HtmlElement) -> list[str]:
@@ -123,7 +162,7 @@ def extract_page(html: str, base_url: str) -> ExtractedPage:
     """Split ``html`` into main text, contact text and the best contact-page link."""
     doc = _parse(html)
     if doc is None:
-        return ExtractedPage(None, "", "", None)
+        return ExtractedPage(None, "", "", None, "")
     title = _words(doc.findtext(".//title") or "") or None
     contact_parts = [*_contact_elements_text(doc), *_link_targets(doc)]
     contact_text = "\n".join(contact_parts)[:MAX_CONTACT_CHARS]
@@ -132,6 +171,7 @@ def extract_page(html: str, base_url: str) -> ExtractedPage:
         main_text=_main_text(html, doc),
         contact_text=contact_text,
         contact_link=_contact_link(doc, base_url),
+        hidden_text=_hidden_text(doc),
     )
 
 

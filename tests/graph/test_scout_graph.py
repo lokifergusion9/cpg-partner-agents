@@ -119,12 +119,19 @@ def client() -> Iterator[AsyncQdrantClient]:
 
 
 def world(
-    client: AsyncQdrantClient, urls: list[str], replies: dict[str, list[str | Exception]]
+    client: AsyncQdrantClient,
+    urls: list[str],
+    replies: dict[str, list[str | Exception]],
+    injection_threshold: float = 2.0,
 ) -> World:
     async def resolve(host: str) -> list[str]:
         return ["93.184.216.34"]
 
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    # The BETA page plants an injection. By default the heuristic (T-32) is switched off here so
+    # these tests keep exercising the layers beneath it: wrapping, no tools, verification.
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, injection_threshold=injection_threshold
+    )
     repo = InMemoryRepository()
     provider = FakeProvider(urls)
     model = ByPageModel(messages=iter([]), pages=replies)
@@ -198,7 +205,7 @@ def invoke(w: World) -> dict[str, Any]:
 ALL_URLS = [ACME, BETA, GAMMA, DELTA, EPSILON]
 
 
-def full_world(client: AsyncQdrantClient) -> World:
+def full_world(client: AsyncQdrantClient, injection_threshold: float = 2.0) -> World:
     return world(
         client,
         ALL_URLS,
@@ -207,6 +214,7 @@ def full_world(client: AsyncQdrantClient) -> World:
             BETA: [reply(extracted("Beta Brokerage", email="ceo@beta.example"))],  # hallucinated
             EPSILON: [reply(extracted("Epsilon Reps", phone="310-555-0100"))],
         },
+        injection_threshold,
     )
 
 
@@ -297,6 +305,22 @@ def test_only_readable_pages_reach_the_model_and_page_text_is_wrapped(
 
 def invoke_leads(w: World) -> list[Lead]:
     return run(w.repo.list_leads("u_1"))
+
+
+@respx.mock
+def test_with_the_heuristic_on_the_planted_page_never_reaches_the_model(
+    client: AsyncQdrantClient,
+) -> None:
+    serve_sites()
+    w = full_world(client, injection_threshold=0.6)
+    final = invoke(w)
+    assert len(w.model.prompts) == 2  # ACME and EPSILON; BETA is excluded, like GAMMA and DELTA
+    assert all(BETA not in prompt for prompt in w.model.prompts)
+    beta = next(p for p in final["pages"] if str(p.url) == BETA)
+    assert (beta.status, beta.chars) == ("injection_flagged", 0) and beta.injection_score >= 0.6
+    assert ("scout_fetch", "injection_flagged") in {(e.stage, e.code) for e in final["errors"]}
+    assert {lead.company_name for lead in final["leads"]} == {"Acme Foods", "Epsilon Reps"}
+    assert run(w.repo.get_page("r_1", BETA)) is None
 
 
 @respx.mock

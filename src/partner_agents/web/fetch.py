@@ -8,9 +8,12 @@ guards: http(s) only, the host must resolve only to public addresses (SSRF), the
 A page that fails is reported as a ``PageRef`` with a status and a ``StageError``; the run
 carries on with the other pages.
 
+A page whose text scores at or above ``INJECTION_THRESHOLD`` (``web/safety.injection_score``) is
+reported as ``injection_flagged`` and is neither stored nor indexed (T-32).
+
 Known limit: the SSRF check resolves the host and httpx resolves it again to connect, so a
 DNS-rebinding server could answer differently the second time. Pinning the connection to
-the checked address is a T-32 / security-review item (HLD §12).
+the checked address is a security-review item (HLD §12).
 """
 
 import asyncio
@@ -33,6 +36,7 @@ from partner_agents.storage.repo import Repository
 from partner_agents.utils.contacts import has_contact_pattern
 from partner_agents.utils.retry import RetryPolicy, retry_async
 from partner_agents.web.html import decode_html, extract_page
+from partner_agents.web.safety import injection_score
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,13 @@ HTML_TYPES = ("text/html", "application/xhtml+xml")
 RETRY_POLICY = RetryPolicy(attempts=2, base_delay_s=0.5)
 
 FailureStatus = Literal[
-    "blocked_robots", "timeout", "http_error", "too_large", "non_html", "ssrf_blocked"
+    "blocked_robots",
+    "timeout",
+    "http_error",
+    "too_large",
+    "non_html",
+    "ssrf_blocked",
+    "injection_flagged",
 ]
 Resolver = Callable[[str], Awaitable[list[str]]]
 
@@ -58,12 +68,18 @@ _URL = TypeAdapter(HttpUrl)
 
 class FetchFailure(Exception):
     def __init__(
-        self, status: FailureStatus, message: str, *, http_status: int | None = None
+        self,
+        status: FailureStatus,
+        message: str,
+        *,
+        http_status: int | None = None,
+        injection_score: float = 0.0,
     ) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
         self.http_status = http_status
+        self.injection_score = injection_score
 
 
 class _Transient(Exception):
@@ -188,7 +204,12 @@ class Fetcher:
             except FetchFailure as failure:
                 logger.info("page not fetched", extra={"url": key, "status": failure.status})
                 return FetchOutcome(
-                    PageRef(url=_URL.validate_python(key), title=None, status=failure.status),
+                    PageRef(
+                        url=_URL.validate_python(key),
+                        title=None,
+                        status=failure.status,
+                        injection_score=failure.injection_score,
+                    ),
                     StageError(stage=STAGE, code=failure.status, message=failure.message, url=key),
                 )
         logger.info("page fetched", extra={"url": key, "chars": page.chars})
@@ -203,13 +224,23 @@ class Fetcher:
         html = decode_html(raw.body, raw.headers.get("content-type", ""))
         extracted = await asyncio.to_thread(extract_page, html, final_url)
         text, contact_text = extracted.main_text, extracted.contact_text
+        hidden_text = extracted.hidden_text
         contact_page_url: str | None = None
         if extracted.contact_link and not has_contact_pattern(f"{text}\n{contact_text}"):
             extra = await self._contact_page(extracted.contact_link)
             if extra is not None:
                 text = f"{text}\n\n{extra[0]}" if text else extra[0]
                 contact_text = f"{contact_text}\n{extra[1]}" if contact_text else extra[1]
+                hidden_text = f"{hidden_text}\n{extra[2]}" if hidden_text else extra[2]
                 contact_page_url = extracted.contact_link
+        score = injection_score(f"{text}\n{contact_text}", hidden_text)
+        if score >= self._settings.injection_threshold:
+            # The page is excluded: it is neither stored nor indexed, so no model reads it.
+            raise FetchFailure(
+                "injection_flagged",
+                f"the page looks like it tries to instruct the model (score {score})",
+                injection_score=score,
+            )
         await self._repo.save_page(
             PageRecord(
                 run_id=run_id,
@@ -224,11 +255,12 @@ class Fetcher:
             title=extracted.title,
             status="ok",
             chars=len(text) + len(contact_text),
+            injection_score=score,
             contact_page_url=_URL.validate_python(contact_page_url) if contact_page_url else None,
         )
 
-    async def _contact_page(self, url: str) -> tuple[str, str] | None:
-        """Text and contact text of the contact page, or ``None`` if it cannot be read."""
+    async def _contact_page(self, url: str) -> tuple[str, str, str] | None:
+        """Text, contact text and hidden text of the contact page, or ``None`` if unreadable."""
         try:
             final_url, raw = await self._get(
                 url, max_bytes=self._settings.fetch_max_bytes, check_robots=True, require_html=True
@@ -238,7 +270,7 @@ class Fetcher:
             return None
         html = decode_html(raw.body, raw.headers.get("content-type", ""))
         extracted = await asyncio.to_thread(extract_page, html, final_url)
-        return extracted.main_text, extracted.contact_text
+        return extracted.main_text, extracted.contact_text, extracted.hidden_text
 
     # requests
 
