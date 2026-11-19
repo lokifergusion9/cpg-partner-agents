@@ -1,8 +1,8 @@
 {
   "suite": "routing",
   "date": "2026-11-20",
-  "generated_at": "2026-11-19T21:32:27+00:00",
-  "git": "be29dbd",
+  "generated_at": "2026-11-19T22:13:49+00:00",
+  "git": "154c55b",
   "provider": "gemini",
   "embedder": null,
   "split": "test",
@@ -11,7 +11,7 @@
     "router": "gemini:gemini-3.5-flash-lite"
   },
   "tokens": {
-    "router": 63245
+    "router": 64084
   },
   "prompt_versions": {
     "charlie": "charlie-v1",
@@ -26,8 +26,8 @@
   "skipped": null,
   "metrics": {
     "n": 60,
-    "intent_accuracy": 1.0,
-    "macro_f1": 1.0,
+    "intent_accuracy": 0.9833333333333333,
+    "macro_f1": 0.9817836812144213,
     "per_intent": {
       "discovery": {
         "precision": 1.0,
@@ -35,9 +35,9 @@
         "f1": 1.0
       },
       "cpg_qa": {
-        "precision": 1.0,
+        "precision": 0.9375,
         "recall": 1.0,
-        "f1": 1.0
+        "f1": 0.967741935483871
       },
       "outreach": {
         "precision": 1.0,
@@ -46,8 +46,8 @@
       },
       "clarify": {
         "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0
+        "recall": 0.8888888888888888,
+        "f1": 0.9411764705882353
       },
       "out_of_scope": {
         "precision": 1.0,
@@ -66,7 +66,8 @@
         "outreach": 9
       },
       "clarify": {
-        "clarify": 9
+        "clarify": 8,
+        "cpg_qa": 1
       },
       "out_of_scope": {
         "out_of_scope": 6
@@ -74,7 +75,7 @@
     },
     "slot_accuracy": 0.9523809523809523,
     "slot_n": 21,
-    "outreach_channel_accuracy": 0.6666666666666666,
+    "outreach_channel_accuracy": 1.0,
     "over_clarify_rate": 0.0
   },
   "notes": [
@@ -88,6 +89,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "distributor",
+        "product_category": "organic tea",
+        "location": "Washington"
+      },
+      "predicted_slots": {
+        "partner_type": "distributor",
+        "product_category": "organic tea",
+        "location": "Washington state"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -99,6 +110,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "retailer",
+        "product_category": "maple syrup",
+        "location": "Vermont"
+      },
+      "predicted_slots": {
+        "partner_type": "retailer",
+        "product_category": "small-batch maple syrup",
+        "location": "Vermont"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -108,8 +129,18 @@
       "query": "cookie brokers in Califronia please",
       "gold": "discovery",
       "predicted": "discovery",
-      "ok": true,
-      "slots_ok": true,
+      "ok": false,
+      "slots_ok": false,
+      "gold_slots": {
+        "partner_type": "broker",
+        "product_category": "cookies",
+        "location": "California"
+      },
+      "predicted_slots": {
+        "partner_type": "broker",
+        "product_category": "cookies",
+        "location": "Califronia"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -121,6 +152,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "distributor",
+        "product_category": "protein bars",
+        "location": "Mumbai"
+      },
+      "predicted_slots": {
+        "partner_type": "distributor",
+        "product_category": "protein bar",
+        "location": "Mumbai"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -132,6 +173,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "manufacturer",
+        "product_category": "cold brew coffee",
+        "location": "Midwest"
+      },
+      "predicted_slots": {
+        "partner_type": "manufacturer",
+        "product_category": "cold brew coffee",
+        "location": "Midwest"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -143,6 +194,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "retailer",
+        "product_category": "artisanal pickles",
+        "location": "New York"
+      },
+      "predicted_slots": {
+        "partner_type": "retailer",
+        "product_category": "artisanal pickles",
+        "location": "New York"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -154,6 +215,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "broker",
+        "product_category": "frozen desserts",
+        "location": null
+      },
+      "predicted_slots": {
+        "partner_type": "broker",
+        "product_category": "frozen dessert",
+        "location": null
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -165,6 +236,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "retailer",
+        "product_category": "kombucha",
+        "location": "Colorado"
+      },
+      "predicted_slots": {
+        "partner_type": "retailer",
+        "product_category": "kombucha",
+        "location": "Colorado"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -176,6 +257,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "distributor",
+        "product_category": "gluten-free pasta",
+        "location": "Ontario, Canada"
+      },
+      "predicted_slots": {
+        "partner_type": "distributor",
+        "product_category": "gluten free pasta",
+        "location": "Ontario Canada"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -187,6 +278,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "broker",
+        "product_category": "snacks",
+        "location": "Atlanta"
+      },
+      "predicted_slots": {
+        "partner_type": "broker",
+        "product_category": "snacks",
+        "location": "Atlanta"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -198,6 +299,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "distributor",
+        "product_category": "namkeen",
+        "location": "Delhi NCR"
+      },
+      "predicted_slots": {
+        "partner_type": "distributor",
+        "product_category": "namkeen",
+        "location": "Delhi NCR"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -209,6 +320,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "retailer",
+        "product_category": "energy drinks",
+        "location": "Florida"
+      },
+      "predicted_slots": {
+        "partner_type": "retailer",
+        "product_category": "energy drinks",
+        "location": "Florida"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -220,6 +341,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "manufacturer",
+        "product_category": "vegan protein powder",
+        "location": "Texas"
+      },
+      "predicted_slots": {
+        "partner_type": "manufacturer",
+        "product_category": "vegan protein powder",
+        "location": "Texas"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -231,6 +362,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "distributor",
+        "product_category": "pet food",
+        "location": "Arizona"
+      },
+      "predicted_slots": {
+        "partner_type": "distributor",
+        "product_category": "pet food",
+        "location": "Arizona"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -242,6 +383,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "broker",
+        "product_category": "refrigerated dips",
+        "location": "Pacific Northwest"
+      },
+      "predicted_slots": {
+        "partner_type": "broker",
+        "product_category": "refrigerated dips",
+        "location": "Pacific Northwest"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -251,8 +402,18 @@
       "query": "show me bakery supply wholesalers in Chicago",
       "gold": "discovery",
       "predicted": "discovery",
-      "ok": false,
-      "slots_ok": false,
+      "ok": true,
+      "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "distributor",
+        "product_category": "bakery supplies",
+        "location": "Chicago"
+      },
+      "predicted_slots": {
+        "partner_type": "distributor",
+        "product_category": "bakery supplies",
+        "location": "Chicago"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -264,6 +425,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "retailer",
+        "product_category": "hot honey",
+        "location": "Nashville"
+      },
+      "predicted_slots": {
+        "partner_type": "retailer",
+        "product_category": "hot honey",
+        "location": "Nashville"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -275,6 +446,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "broker",
+        "product_category": "organic jaggery",
+        "location": "Karnataka"
+      },
+      "predicted_slots": {
+        "partner_type": "broker",
+        "product_category": "organic jaggery",
+        "location": "Karnataka"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -286,6 +467,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "manufacturer",
+        "product_category": "specialty coffee",
+        "location": "Oregon"
+      },
+      "predicted_slots": {
+        "partner_type": "manufacturer",
+        "product_category": "specialty coffee",
+        "location": "Oregon"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -297,6 +488,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "distributor",
+        "product_category": "plant-based burgers",
+        "location": "UK"
+      },
+      "predicted_slots": {
+        "partner_type": "distributor",
+        "product_category": "plant-based burgers",
+        "location": "UK"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -308,6 +509,16 @@
       "predicted": "discovery",
       "ok": true,
       "slots_ok": true,
+      "gold_slots": {
+        "partner_type": "retailer",
+        "product_category": "kids snacks",
+        "location": "Ohio"
+      },
+      "predicted_slots": {
+        "partner_type": "retailer",
+        "product_category": "kids snacks",
+        "location": "Ohio"
+      },
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -319,6 +530,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -330,6 +543,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -341,6 +556,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -352,6 +569,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -363,6 +582,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -374,6 +595,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -385,6 +608,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -396,6 +621,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -407,6 +634,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -418,6 +647,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -429,6 +660,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -440,6 +673,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -451,6 +686,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -462,6 +699,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -473,6 +712,8 @@
       "predicted": "cpg_qa",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -484,6 +725,8 @@
       "predicted": "outreach",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "email",
       "predicted_channel": "email",
       "errors": []
@@ -495,6 +738,8 @@
       "predicted": "outreach",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "email",
       "predicted_channel": "email",
       "errors": []
@@ -506,6 +751,8 @@
       "predicted": "outreach",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "email",
       "predicted_channel": "email",
       "errors": []
@@ -517,6 +764,8 @@
       "predicted": "outreach",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "email",
       "predicted_channel": "email",
       "errors": []
@@ -528,6 +777,8 @@
       "predicted": "outreach",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "email",
       "predicted_channel": "email",
       "errors": []
@@ -539,6 +790,8 @@
       "predicted": "outreach",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "email",
       "predicted_channel": "email",
       "errors": []
@@ -548,10 +801,12 @@
       "query": "ring the LA broker",
       "gold": "outreach",
       "predicted": "outreach",
-      "ok": false,
+      "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "voice",
-      "predicted_channel": "email",
+      "predicted_channel": "voice",
       "errors": []
     },
     {
@@ -559,10 +814,12 @@
       "query": "call the top 2",
       "gold": "outreach",
       "predicted": "outreach",
-      "ok": false,
+      "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "voice",
-      "predicted_channel": "email",
+      "predicted_channel": "voice",
       "errors": []
     },
     {
@@ -570,10 +827,12 @@
       "query": "phone the last lead and ask for a meeting",
       "gold": "outreach",
       "predicted": "outreach",
-      "ok": false,
+      "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": "voice",
-      "predicted_channel": "email",
+      "predicted_channel": "voice",
       "errors": []
     },
     {
@@ -583,6 +842,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -594,6 +855,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -602,9 +865,11 @@
       "id": "r068",
       "query": "who should I sell to?",
       "gold": "clarify",
-      "predicted": "clarify",
-      "ok": true,
+      "predicted": "cpg_qa",
+      "ok": false,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -616,6 +881,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -627,6 +894,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -638,6 +907,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -649,6 +920,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -660,6 +933,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -671,6 +946,8 @@
       "predicted": "clarify",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -682,6 +959,8 @@
       "predicted": "out_of_scope",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -693,6 +972,8 @@
       "predicted": "out_of_scope",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -704,6 +985,8 @@
       "predicted": "out_of_scope",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -715,6 +998,8 @@
       "predicted": "out_of_scope",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -726,6 +1011,8 @@
       "predicted": "out_of_scope",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []
@@ -737,6 +1024,8 @@
       "predicted": "out_of_scope",
       "ok": true,
       "slots_ok": null,
+      "gold_slots": null,
+      "predicted_slots": null,
       "gold_channel": null,
       "predicted_channel": null,
       "errors": []

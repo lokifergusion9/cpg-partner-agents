@@ -196,73 +196,8 @@ Each persona is a card that the `simulator` role plays against the call agent. H
 
 | Metric | Target | Why |
 |---|---|---|
-| Routing intent accuracy | ≥ 0.90 | a misroute wastes a whole run |
-| Slot accuracy | ≥ 0.85 | wrong slots mean wrong search |
-| Email precision | ≥ 0.95 | outreach acts on it |
-| Email recall | ≥ 0.70 | some pages hide contacts in images or forms |
-| Eligible-hallucination rate | **= 0** | non-negotiable (PRD G2) |
-| Abstention accuracy | ≥ 0.80 | no invented contacts on contact-less pages |
-| Evidence recall (hybrid) | ≥ 0.90 | extraction can't find what isn't selected |
-| Injection attack success | **= 0** | |
-| Injection false-positive rate | ≤ 0.05 | don't drop legitimate pages |
-| KB citation accuracy | ≥ 0.85 | |
-| KB abstention accuracy | ≥ 0.80 | |
-| E2E p95 latency | ≤ 45 s | PRD NFR |
-| E2E yield | ≥ 5 leads/query (median) | PRD G1 |
-| Call outcome accuracy | ≥ 0.85 | PRD G7 |
-| Call hard-rule violation rate | **= 0** | a sent invented number or banned phrase is the worst call failure |
-| Opt-out compliance | **= 1.0** | legal and trust requirement |
-| Booking precision | ≥ 0.95 | a fake booking wastes the founder's time |
-| Unsupported-claim rate (judge) | ≤ 0.02 | |
-| Call p95 per turn (text, hosted) | ≤ 5 s | PRD NFR |
-
-## 6. Running and outputs
-
-```bash
-uv run python -m eval.run --suite all --provider gemini          # full run
-uv run python -m eval.run --suite extraction --split dev         # iterate on dev
-uv run python -m eval.run --suite all --provider fake            # offline smoke (CI)
-```
-
-**As built (T-39).** `eval/run.py` (suites, settings, reports) and `eval/metrics.py` (pure metric functions, hand-checked in `tests/eval/test_metrics.py`). Things that differ from, or add to, the text above:
-- `--provider fake` uses the stock fake model, whose reply is never valid, so routing clarifies everything, extraction finds nothing and the knowledge base abstains. It proves that every suite runs and reports offline and measures nothing about the models. Numbers from a fake run are labelled `provider: fake`; the embedder is then a hashing one (the report says so). The injection heuristic's flag rate and false-positive rate and the retrieval suite do not call a model, so their fake-run numbers are real for the heuristic, but the retrieval ones use the hashing embedder rather than bge.
-- `--split` applies to routing (and later `calls`). Extraction, retrieval, injection, kb and e2e use their whole set.
-- The extraction suite reads each snapshot through the real fetcher (SSRF guard, robots, contact-page follow, the injection heuristic) with an in-process HTTP transport, one page per search result, with a generic intent for the partner type (the rows have no category of their own). Rows whose snapshot is missing or edited are skipped with a note, so a fresh clone runs on whatever is present.
-- The injection suite's false-positive rate is the control page plus every extraction snapshot run through the fetcher (no model call): 31 pages when all snapshots are present.
-- The knowledge-base suite ingests `data/kb/` into an in-memory Qdrant and reads the cited doc ids back from the `Sources:` block of each reply.
-- The e2e suite runs only with a real provider (it builds the full app and uses the live web); with `fake` it reports `skipped`. Cost is not estimated yet: the config has no price table. The 20 spot-checked leads (`spot_check.md`) are still a human step.
-- `--no-cache` and the fake provider turn the LLM cache off; otherwise it is `eval/.cache/` (gitignored), keyed by provider, model, temperature, prompt version, schema and messages (`llm.invoke_structured`). The report's `cache` field holds `llm_hits` / `llm_misses` for the run.
-- The `calls` suite (T-62, `eval/calls.py` and `eval/call_metrics.py`) plays every persona of the split with the `simulator` role against the stage machine (or, with `--config CALL_CONTROL=prompt_only`, the single-prompt baseline of A8), then has the `judge` role read each call. A call whose simulator fails is excluded and listed in the notes; read the transcripts in the report for personas that broke character and re-run them. Per-turn timing is measured for the stage machine only.
-
-Outputs go to `eval/results/<YYYY-MM-DD>_<suite>_<provider>.json` and `.md`. Each report header records the git SHA, provider + model ids per role, prompt versions, dataset file hashes, the config overrides and the cache hit rate. Results files are committed. They are the evidence.
-
-## 7. Ablation plan (run on dev to choose, confirm once on test)
-
-| # | Variable | Values | Primary metric | Question answered |
-|---|---|---|---|---|
-| A1 | Evidence mode | vector / contact_pattern / **hybrid** | evidence recall, email F1 | Is hybrid selection worth it? |
-| A2 | `CHUNK_TOKENS` | 500 / **1000** / 1500 | email F1, tokens/run | Chunk size vs accuracy vs cost |
-| A3 | `EVIDENCE_K` | 2 / **4** / 8 | email F1, latency | How much context is enough? |
-| A4 | Verification | off / **on** | email precision, eligible-hallucination | What does verification buy? |
-| A5 | Contact-page discovery | off / **on** | email recall, latency | Recall gain vs extra fetch time |
-| A6 | Provider | **gemini** / groq / ollama | all + latency | Quality vs speed vs local |
-| A7 | Injection heuristic | off / **on** | attack success, FP rate | Is the heuristic layer needed given the other layers? |
-| A8 | Call control | single free-form prompt (whole playbook in one prompt) / **stage machine + checks** | outcome accuracy, hard-rule violations, opt-out compliance | Does code-owned flow beat a prompt? (the headline ablation) |
-| A9 | Reply checks | off / **on (regenerate once)** | hard-rule violations, regenerate rate, latency | What do the checks buy, and at what cost? |
-| A10 | Caller model | **gemini** / groq / ollama | outcome accuracy, violations, p95 per turn | Can a local model run the call? |
-
-Bold = current default.
-
-## 8. Results
-
-> Fill these in from the results files. Leave "—" until there is a real run. Never estimate.
-
-**Baseline** (2026-11-20, Gemini `gemini-3.5-flash-lite` for every role on the free tier, paced at 12 calls a minute, fresh cache, git `be29dbd`; kb at `98f3808`; retrieval at `cf835f8` with `BAAI/bge-small-en-v1.5`; dataset hashes in each file under `eval/results/`). **Not yet run: e2e, calls, and the model side of A1 to A10 (see the T-40 row in TASKS.md).** That model ignores the temperature setting (the client warns about it), so runs are not exactly repeatable: a first routing run at `98f3808` (overwritten by this one) scored 59/60 on intent, this one 60/60. Read a single item as ±1.
-
-| Metric | Target | Result | n |
-|---|---|---|---|
-| Routing intent accuracy | ≥ 0.90 | **1.000** (60/60; macro-F1 1.000; over-clarify 0.0) | 60 |
-| Slot accuracy | ≥ 0.85 | **0.952** (20/21). Outreach channel accuracy **0.667** (6/9): all three call requests ("ring the LA broker", "call the top 2", "phone the last lead...") were routed to email | 21 / 9 |
+| Routing intent accuracy | ≥ 0.90 | **0.983** (59/60; macro-F1 0.982; over-clarify 0.0). The miss is `r068`, a gold `clarify` read as `cpg_qa` | 60 |
+| Slot accuracy | ≥ 0.85 | **0.952** (20/21). The miss is `r023`: the model copies the typo "Califronia" into `location`. Outreach channel accuracy **1.000** (9/9) after the T-41 fix (6/9 before: every call request had been read as email) | 21 / 9 |
 | Email precision / recall / F1 | ≥ 0.95 / ≥ 0.70 / — | **1.000 / 0.737 / 0.848** (phones 1.000 / 0.710 / 0.830) | 30 pages |
 | Raw hallucination rate | (report) | **0.0625** (1 of 16 proposed emails was not in the page) | 16 emails |
 | Eligible-hallucination rate | = 0 | **0.000** (0 of 14 eligible emails) | 14 emails |
@@ -312,9 +247,18 @@ Take the 10 worst items across suites and categorise each:
 
 | Item | Suite | Category | What happened | Fix idea |
 |---|---|---|---|---|
-| | | | | |
+| r063, r064, r065 (3 call requests) | routing | Router error | "ring the LA broker", "call the top 2", "phone the last lead..." came back with `outreach_channel: email` although the model's `reason` said "call an earlier lead". The raw reply did not contain the field at all: `outreach_channel` has a default, so Gemini sent it as optional and Flash Lite omitted it. | **Shipped:** list it as required in the schema sent to the provider (`RouteDecision`). 6/9 → 9/9. |
+| r036 | routing | Metric bug (not a model error) | "show me bakery supply wholesalers in Chicago" was scored as a slot miss because my stemmer turned "supplies" into "supplie", which does not match "supply". | **Shipped:** fold `ie` into `y` and strip plurals symmetrically (`eval/metrics.py`, 4 new test cases). It passes in the final run. |
+| r023 | routing | Router error | The typo "Califronia" was copied into `location`. A typo-tolerant search would still work, but the slot is not normalised. | Few-shot or a rule to correct obvious place typos; not shipped. |
+| r068 | routing | Router error (arguable label) | "who should I sell to?" is gold `clarify` and was read as `cpg_qa` in 3 of 4 runs. The question is also a fair CPG question. | Review the label first; then a clarify few-shot from dev. Not shipped. |
+| e002, e003, e006, e009, e017 (5 pages) | extraction | Extraction miss (schema) | The page lists 2-3 phone numbers or 2 emails, the model output one per company because `ExtractedLead` holds one `email` and one `phone`. Precision stays 1.0, recall drops: phone recall 0.710, email recall 0.737. | Let a lead carry several contacts (`emails`, `phones` lists) or let the model return one lead per contact. A contract change (HLD §4); not shipped. |
+| e008 | extraction | Extraction miss | Gold `hotline@melissas.com`; no email proposed at all. | Read the page text to see whether it is shown as a label rather than an address. |
+| e011 | extraction | Hallucination caught | The model proposed an email that is not on the page (`not_in_source`); the gold `sales@marisafoods.com` was missed. This is the one raw hallucination (1 of 16) and verification kept it out. | None needed for safety; recall only. |
+| e019, e020 | extraction | Contact hidden | The two Cloudflare-protected pages: e019 gave an `invalid_format` value, e020 no email. Only phones were found. | Decode `data-cfemail` at extraction time or have the model quote the decoded text; a known limitation of the 2 obfuscated pages. |
+| k007, k008, k017 | kb | Citation (arguably the label) | The answer cited a second, related note that is not in `expected_doc_ids` (k007 also cites `food-labeling-basics`, k008 `food-safety-fsma-overview`, k017 `wholesaler-role`). Citation accuracy is exactly at the 0.85 target (17/20). | Decide whether those notes are acceptable sources and widen `expected_doc_ids` for them, or tell the writer to cite only what it uses. Not shipped. |
+| (not run) | calls, e2e | | No call-agent category (misclassified turn, transition bug, caught violation, broken character) can be filled in until the `calls` suite has run. | See TASKS.md. |
 
-**Improvement shipped**: change · before → after on dev → after on test.
+**Improvement shipped**: require `outreach_channel` in the schema sent to the provider (`RouteDecision.json_schema_extra`, git `88a97bd`). Outreach channel accuracy: dev 2/3 → 3/3, test 6/9 → 9/9 (n = 9, one run each; the router model ignores the temperature setting, so single items vary between runs). Intent accuracy over the same runs moved 60/60 → 58/60 → 59/60 on clarify items (`r068`, `r071`) that the change does not touch, which is the run-to-run noise to expect. A separate fix to my own slot-matching (r036) is recorded above and is not a model improvement.
 
 ## 10. Reporting format (README / resume)
 
