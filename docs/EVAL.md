@@ -220,6 +220,16 @@ uv run python -m eval.run --suite extraction --split dev         # iterate on de
 uv run python -m eval.run --suite all --provider fake            # offline smoke (CI)
 ```
 
+**As built (T-39).** `eval/run.py` (suites, settings, reports) and `eval/metrics.py` (pure metric functions, hand-checked in `tests/eval/test_metrics.py`). Things that differ from, or add to, the text above:
+- `--provider fake` uses the stock fake model, whose reply is never valid, so routing clarifies everything, extraction finds nothing and the knowledge base abstains. It proves that every suite runs and reports offline and measures nothing about the models. Numbers from a fake run are labelled `provider: fake`; the embedder is then a hashing one (the report says so). The injection heuristic's flag rate and false-positive rate and the retrieval suite do not call a model, so their fake-run numbers are real for the heuristic, but the retrieval ones use the hashing embedder rather than bge.
+- `--split` applies to routing (and later `calls`). Extraction, retrieval, injection, kb and e2e use their whole set.
+- The extraction suite reads each snapshot through the real fetcher (SSRF guard, robots, contact-page follow, the injection heuristic) with an in-process HTTP transport, one page per search result, with a generic intent for the partner type (the rows have no category of their own). Rows whose snapshot is missing or edited are skipped with a note, so a fresh clone runs on whatever is present.
+- The injection suite's false-positive rate is the control page plus every extraction snapshot run through the fetcher (no model call): 31 pages when all snapshots are present.
+- The knowledge-base suite ingests `data/kb/` into an in-memory Qdrant and reads the cited doc ids back from the `Sources:` block of each reply.
+- The e2e suite runs only with a real provider (it builds the full app and uses the live web); with `fake` it reports `skipped`. Cost is not estimated yet: the config has no price table. The 20 spot-checked leads (`spot_check.md`) are still a human step.
+- `--no-cache` and the fake provider turn the LLM cache off; otherwise it is `eval/.cache/` (gitignored), keyed by provider, model, temperature, prompt version, schema and messages (`llm.invoke_structured`). The report's `cache` field holds `llm_hits` / `llm_misses` for the run.
+- The `calls` suite arrives with T-62.
+
 Outputs go to `eval/results/<YYYY-MM-DD>_<suite>_<provider>.json` and `.md`. Each report header records the git SHA, provider + model ids per role, prompt versions, dataset file hashes, the config overrides and the cache hit rate. Results files are committed. They are the evidence.
 
 ## 7. Ablation plan (run on dev to choose, confirm once on test)

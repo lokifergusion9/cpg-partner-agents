@@ -33,6 +33,7 @@ from pydantic import BaseModel, ValidationError
 from partner_agents.config import ModelSpec, Role, Settings, get_settings
 from partner_agents.fakes import ScriptedChatModel
 from partner_agents.llm_cache import ResponseCache, cache_key
+from partner_agents.utils.cache_stats import record_cache
 from partner_agents.utils.retry import DEFAULT_POLICY, retry_async, status_code_of
 
 logger = logging.getLogger(__name__)
@@ -390,11 +391,14 @@ async def _cached_reply[T: BaseModel](
         return None
     entry = await cache.get(key)
     if entry is None:
+        record_cache("llm", misses=1)
         return None
     try:
         parsed = schema.model_validate_json(entry["parsed"])
     except (KeyError, TypeError, ValidationError):
+        record_cache("llm", misses=1)
         return None  # a stale or damaged entry is a miss
+    record_cache("llm", hits=1)
     _record_provider(role, str(entry.get("label", "cache")))
     logger.info("llm cache hit", extra={"role": role, "schema": schema.__name__})
     return parsed

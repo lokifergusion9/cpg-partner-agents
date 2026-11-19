@@ -11,6 +11,7 @@ from eval.schemas import (
     InjectionRow,
     KbRow,
     RoutingRow,
+    load_e2e,
     load_extraction,
     load_injection,
     load_kb,
@@ -327,6 +328,15 @@ def test_a_malformed_kb_row_is_rejected() -> None:
     for bad in ({"id": "q1"}, {"question": ""}, {"expected_doc_ids": "x"}, {"extra": 1}):
         with pytest.raises(ValidationError):
             KbRow.model_validate({"id": "k001", "question": "q?", **bad})
+
+
+# --- e2e (T-39) ---------------------------------------------------------------------
+
+
+def test_there_are_ten_distinct_live_queries() -> None:
+    rows = load_e2e()
+    assert [row.id for row in rows] == [f"q{n:02d}" for n in range(1, 11)]
+    assert len({row.query.lower() for row in rows}) == 10
 
 
 # --- the row model itself -----------------------------------------------------------

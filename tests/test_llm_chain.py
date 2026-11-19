@@ -13,6 +13,7 @@ from partner_agents.config import ModelSpec, Role, Settings, parse_model_spec
 from partner_agents.fakes import ScriptedChatModel
 from partner_agents.llm_cache import ResponseCache, cache_key
 from partner_agents.schemas import DiscoveryIntent
+from partner_agents.utils.cache_stats import track_cache
 from partner_agents.utils.retry import RetryPolicy
 from tests.helpers import FaultyModel, RateLimited, ServerError
 
@@ -336,6 +337,19 @@ def test_a_cache_hit_costs_no_tokens_and_reports_who_answered(tmp_path: Path) ->
         ask(chain(ScriptedChatModel.scripted(), cache_dir=tmp_path))
     assert usage == {}
     assert providers == {"router": "a"}
+
+
+def test_the_response_cache_counts_hits_and_misses_for_the_run(tmp_path: Path) -> None:
+    """T-39: the eval report quotes the cache hit rate (``RunRecord.cache`` ``llm_*``)."""
+    cached = chain(ScriptedChatModel.scripted(VALID), cache_dir=tmp_path)
+    with track_cache() as stats:
+        ask(cached)  # a miss: the model answers and the reply is stored
+        ask(cached)  # a hit
+        ask(cached)  # a hit
+    assert stats == {"llm_misses": 1, "llm_hits": 2}
+    with track_cache() as without_cache:  # no cache directory: nothing to count
+        ask(chain(ScriptedChatModel.scripted(VALID)))
+    assert without_cache == {}
 
 
 @pytest.mark.parametrize(

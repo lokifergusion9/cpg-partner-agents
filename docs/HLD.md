@@ -179,7 +179,7 @@ class RunRecord(BaseModel):
     timings_ms: dict[str, int]; tokens: dict[str, int]      # per role
     prompt_versions: dict[str, str]; errors: list[StageError]
     trace_url: str | None = None
-    cache: dict[str, int] = {}             # search_hits / search_misses / embed_hits / embed_misses (T-34)
+    cache: dict[str, int] = {}             # search_*, embed_* (T-34) and llm_hits / llm_misses (T-39, only with LLM_CACHE_DIR)
     providers: dict[str, str] = {}         # role -> "provider:model" that actually answered (ADR-018)
 ```
 

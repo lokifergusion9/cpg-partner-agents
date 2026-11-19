@@ -174,6 +174,13 @@ class KbRow(Row):
         return bool(self.expected_doc_ids)
 
 
+class E2eRow(Row):
+    """A live query for the e2e suite; there is no gold label, only measurements (EVAL 3.5)."""
+
+    id: str = Field(pattern=r"^q\d{2}$")
+    query: str = Field(min_length=1)
+
+
 def read_jsonl(path: Path) -> list[dict[str, object]]:
     lines = path.read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line.strip()]
@@ -189,3 +196,7 @@ def load_injection(path: Path = DATASETS / "injection.jsonl") -> list[InjectionR
 
 def load_kb(path: Path = DATASETS / "kb.jsonl") -> list[KbRow]:
     return [KbRow.model_validate(row) for row in read_jsonl(path)]
+
+
+def load_e2e(path: Path = DATASETS / "e2e.jsonl") -> list[E2eRow]:
+    return [E2eRow.model_validate(row) for row in read_jsonl(path)]
