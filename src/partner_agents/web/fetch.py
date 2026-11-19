@@ -215,6 +215,19 @@ class Fetcher:
         logger.info("page fetched", extra={"url": key, "chars": page.chars})
         return FetchOutcome(page)
 
+    async def fetch_html(self, url: str) -> tuple[str, str]:
+        """The final URL and decoded HTML of ``url``, through every guard (SSRF, robots, size).
+
+        Nothing is stored or scored. The eval snapshot tool uses it (``eval/snapshot.py``).
+        Raises ``FetchFailure``.
+        """
+        key = str(_URL.validate_python(url))
+        async with self._slots:
+            final_url, raw = await self._get(
+                key, max_bytes=self._settings.fetch_max_bytes, check_robots=True, require_html=True
+            )
+        return final_url, decode_html(raw.body, raw.headers.get("content-type", ""))
+
     # one page
 
     async def _fetch_page(self, url: str, run_id: str) -> PageRef:

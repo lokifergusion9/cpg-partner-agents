@@ -1,9 +1,16 @@
 """Schema and mix tests for the evaluation datasets (T-36 onwards, docs/EVAL.md section 3)."""
 
 from collections import Counter
+from pathlib import Path
 
 import pytest
-from eval.schemas import RoutingRow, load_routing
+from eval.schemas import (
+    ExtractionRow,
+    RoutingRow,
+    load_extraction,
+    load_routing,
+    snapshot_problems,
+)
 from pydantic import ValidationError
 
 from partner_agents.prompts.charlie import FEW_SHOT
@@ -89,6 +96,112 @@ def test_no_few_shot_example_of_the_router_prompt_comes_from_the_test_split() ->
     for example_id, (query, _) in FEW_SHOT.items():
         assert by_id[example_id].split == "dev"
         assert normal(query) not in test_queries
+
+
+# --- extraction (T-37) --------------------------------------------------------------
+
+
+def extraction() -> list[ExtractionRow]:
+    return load_extraction()
+
+
+def test_there_are_30_pages_with_unique_ids_and_urls() -> None:
+    pages = extraction()
+    assert [row.id for row in pages] == [f"e{n:03d}" for n in range(1, 31)]
+    assert len({row.url for row in pages}) == 30
+    assert len({row.snapshot_sha256 for row in pages}) == 30  # no two snapshots are the same page
+
+
+def test_the_case_mix_is_the_one_in_the_docs() -> None:
+    """EVAL 3.2 asked for 15 / 5 / 5 / 5. Only two real obfuscated pages were found among about
+    130 candidate sites, so the mix is 19 / 2 / 5 / 4 (the docs and TASKS.md say so)."""
+    counts = Counter(row.case for row in extraction())
+    assert counts == {"standard": 19, "obfuscated": 2, "contact_page": 5, "no_contact": 4}
+
+
+def test_the_partner_types_are_the_documented_ones() -> None:
+    counts = Counter(row.partner_type for row in extraction())
+    assert counts == {"retailer": 13, "distributor": 12, "broker": 4, "manufacturer": 1}
+
+
+def test_gold_contacts_are_normalised_and_the_cases_are_consistent() -> None:
+    for row in extraction():
+        assert row.emails == sorted(set(row.emails)) or len(row.emails) < 2
+        if row.case == "no_contact":
+            assert not row.emails and not row.phones
+        else:
+            assert row.emails or row.phones
+        assert row.contact_snapshot is not None or row.case != "contact_page"
+        assert not row.ambiguous
+
+
+def test_obfuscated_and_contact_page_rows_describe_how_the_contact_is_hidden() -> None:
+    for row in extraction():
+        if row.case == "obfuscated":
+            assert "data-cfemail" in row.notes and row.emails
+        if row.case == "contact_page":
+            assert row.contact_url and row.emails and "contact" in row.notes
+
+
+def test_every_snapshot_that_is_present_still_matches_its_hash() -> None:
+    """The snapshots are third-party HTML and gitignored, so a fresh clone has none: those are
+    skipped. A snapshot that exists must be the one that was labelled."""
+    problems = [p for row in extraction() for p in snapshot_problems(row)]
+    assert [p for p in problems if p.startswith("mismatch")] == []
+    present = sum(not p.startswith("missing") for p in problems)
+    if len(problems) and all(p.startswith("missing") for p in problems):
+        pytest.skip("no snapshots on this machine (eval/fixtures/pages is gitignored)")
+    assert present >= 0
+
+
+def test_a_missing_or_edited_snapshot_is_reported(tmp_path: Path) -> None:
+    row = extraction()[0]
+    assert snapshot_problems(row, tmp_path) == [f"missing {row.snapshot}"]
+    (tmp_path / "pages").mkdir()
+    (tmp_path / row.snapshot).write_text("edited", encoding="utf-8")
+    assert snapshot_problems(row, tmp_path) == [f"mismatch {row.snapshot}"]
+
+
+def good_page(**fields: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "id": "e001",
+        "url": "https://acme.example/",
+        "snapshot": "pages/e001.html",
+        "snapshot_sha256": "a" * 64,
+        "company_name": "Acme",
+        "partner_type": "broker",
+        "emails": ["sales@acme.example"],
+        "phones": [],
+        "case": "standard",
+    }
+    return {**base, **fields}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        good_page(emails=["Sales@Acme.example"]),  # not lowercase
+        good_page(phones=["310-555-0100"]),  # not E.164
+        good_page(emails=["a@acme.example", "a@acme.example"]),  # listed twice
+        good_page(case="no_contact"),  # a no_contact page with a gold email
+        good_page(emails=[], phones=[]),  # a standard page with no contact
+        good_page(case="contact_page"),  # without a contact snapshot
+        good_page(contact_url="https://acme.example/contact"),  # a partial contact snapshot
+        good_page(snapshot="pages/other.html"),
+        good_page(snapshot_sha256="xyz"),
+        good_page(partner_type="agency"),
+        good_page(extra="x"),
+    ],
+)
+def test_a_malformed_extraction_row_is_rejected(bad: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        ExtractionRow.model_validate(bad)
+
+
+def test_a_good_extraction_row_and_an_ambiguous_one_are_accepted() -> None:
+    assert ExtractionRow.model_validate(good_page()).emails == ["sales@acme.example"]
+    unsure = good_page(emails=[], phones=[], ambiguous=True, notes="image-only contact")
+    assert ExtractionRow.model_validate(unsure).ambiguous
 
 
 # --- the row model itself -----------------------------------------------------------

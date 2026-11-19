@@ -52,21 +52,23 @@ Outreach items include `"context_leads": true`. The runner seeds a fake prior ru
 
 ```json
 {"id": "e014", "url": "https://example-broker.com/", "snapshot": "pages/e014.html",
- "snapshot_sha256": "…", "contact_snapshot": "pages/e014_contact.html",
+ "snapshot_sha256": "…", "contact_url": "https://example-broker.com/contact",
+ "contact_snapshot": "pages/e014_contact.html", "contact_snapshot_sha256": "…",
  "company_name": "Example Brokerage", "partner_type": "broker",
  "emails": ["sales@example-broker.com"], "phones": ["+13105550100"],
- "case": "contact_page", "notes": "email only on /contact"}
+ "case": "contact_page", "notes": "email only on /contact", "ambiguous": false}
 ```
 
-**Mix (by `case`):** 15 `standard`, 5 `obfuscated` (e.g. `info [at] x [dot] com`), 5 `contact_page` (contact only on a linked page), 5 `no_contact` (gold `emails: []`, which tests abstention). Partner types are balanced: about 10 brokers, 10 distributors, 10 retailers.
+**Mix (by `case`), as built in T-37:** 19 `standard`, 2 `obfuscated`, 5 `contact_page` (contact only on a linked page, which the snapshot tool followed), 4 `no_contact` (gold `emails: []` and `phones: []`, which tests abstention; their contact page, if followed, shows nothing either). **This differs from the first plan (15 / 5 / 5 / 5).** Obfuscation is rare on real business sites: among about 130 candidate pages only 3 hid an address, all with Cloudflare email protection, and 2 of them were usable partners. No page with `info [at] x [dot] com` turned up, and none was invented. An `obfuscated` row's gold email is the address that its `data-cfemail` value decodes to, which is what a browser shows. Partner types as built: 13 retailers, 12 distributors, 4 brokers, 1 manufacturer (brokers with a findable site and a public contact are the scarce kind). Rows are in `eval/datasets/extraction.jsonl`; the snapshots are in `eval/fixtures/pages/` (gitignored), read with `eval.schemas.load_extraction()` and checked with `snapshot_problems()`.
 
 **Selection rules.** Real businesses that publicly list a **role-based** business contact. No personal emails, no login-walled pages, nothing disallowed by robots.txt.
 
-**Snapshots.** `eval/snapshot.py <url>` saves the HTML (and the contact page, if followed) and records sha256. The snapshot HTML is **gitignored** because it is third-party content. URLs, labels and hashes are committed. The runner serves snapshots through respx, so extraction runs are reproducible offline (except for LLM calls).
+**Snapshots.** `uv run python -m eval.snapshot <url> <id> [--no-contact]` fetches the page through the app's own fetcher (`Fetcher.fetch_html`: SSRF guard, robots.txt, size limit), follows the contact page when the page shows no email or phone, saves the HTML under `eval/fixtures/pages/` and prints the sha256 of each file with the contacts a regex finds (an aid for labelling, never the label). A page that robots.txt disallows is not saved. On a fresh clone the snapshots are missing; the hash test then skips, and a snapshot that exists but does not match fails. The snapshot HTML is **gitignored** because it is third-party content. URLs, labels and hashes are committed. The runner serves snapshots through respx, so extraction runs are reproducible offline (except for LLM calls).
 
 **Labelling guide**
 - `emails` / `phones`: every business contact that a human sees on the snapshot (main page + contact page). Normalise emails to lowercase and phones to E.164.
 - `company_name`: the name as the business presents itself (no legal suffix unless always used).
+- A fax number is not a contact and is not labelled. Contact data that is only in the page's script or JSON settings and not in the visible text does not count (such a page was left out of the set instead of being labelled `no_contact`).
 - A contact that only appears in an image is **not** labelled (the system can't read it; this is noted as a known limitation).
 - If unsure, add `notes` and exclude it from scoring with `"ambiguous": true`.
 
