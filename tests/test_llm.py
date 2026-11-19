@@ -1,4 +1,5 @@
 import asyncio
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -129,6 +130,39 @@ def test_llm_slot_bounds_concurrent_calls() -> None:
 
     asyncio.run(main())
     assert peak == 2
+
+
+def test_llm_slot_spaces_call_starts_when_an_rpm_limit_is_set() -> None:
+    """T-40: 600 calls a minute is one start every 0.1 s, however many are waiting."""
+    settings = make_settings(llm_max_concurrency=8, llm_rpm_limit=600)
+    starts: list[float] = []
+
+    async def call() -> None:
+        async with llm.llm_slot(settings):
+            starts.append(asyncio.get_running_loop().time())
+
+    async def main() -> None:
+        await asyncio.gather(*(call() for _ in range(5)))
+
+    asyncio.run(main())
+    gaps = [b - a for a, b in pairwise(starts)]
+    assert len(starts) == 5 and all(gap >= 0.09 for gap in gaps)
+
+
+def test_llm_slot_does_not_pace_without_an_rpm_limit() -> None:
+    settings = make_settings(llm_max_concurrency=8)
+    assert settings.llm_rpm_limit == 0
+    starts: list[float] = []
+
+    async def call() -> None:
+        async with llm.llm_slot(settings):
+            starts.append(asyncio.get_running_loop().time())
+
+    async def main() -> None:
+        await asyncio.gather(*(call() for _ in range(5)))
+
+    asyncio.run(main())
+    assert max(starts) - min(starts) < 0.05
 
 
 def test_llm_slot_is_released_when_the_call_raises() -> None:

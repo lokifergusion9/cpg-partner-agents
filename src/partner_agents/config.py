@@ -134,6 +134,7 @@ class Settings(BaseSettings):
     llm_fallbacks: Annotated[list[ModelSpec], NoDecode] = Field(default_factory=list)
     llm_cache_dir: Path | None = None
     llm_max_concurrency: int = Field(4, ge=1)
+    llm_rpm_limit: int = Field(0, ge=0)  # model calls per minute; 0 = no pacing
     llm_timeout_s: float = Field(60, gt=0)
     ollama_timeout_s: float = Field(60, gt=0)
 

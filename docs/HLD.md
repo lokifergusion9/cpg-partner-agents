@@ -710,7 +710,7 @@ A cleanup job runs on startup (the FastAPI lifespan, after the MongoDB indexes) 
 
 - `get_chat_model(role)` returns a LangChain `BaseChatModel` for `LLM_PROVIDER` ∈ {`gemini`, `groq`, `ollama`, `fake`}. Model ids come from env (`LLM_MODEL_*`). Check current free-tier model names in each provider's console; do not hard-code them.
 - `invoke_structured(model, schema, messages, *, role, prompt_version="")` calls `.with_structured_output(schema, include_raw=True)` and validates the result. An invalid reply gets one retry with the bad reply and a field-level error (no input values) appended; a second failure raises `StructuredOutputError`. Tokens of every attempt are added to the per-role totals of the active `track_usage()` block, which becomes `RunRecord.tokens`.
-- A semaphore per event loop, sized `LLM_MAX_CONCURRENCY` (`llm_slot()`), wraps every model call attempt. 429, 5xx and timeouts retry through `utils/retry.py` (`llm.RETRY_POLICY`); a validation failure is never a transport retry, and a transport error never uses the validation retry.
+- A semaphore per event loop, sized `LLM_MAX_CONCURRENCY` (`llm_slot()`), wraps every model call attempt; with `LLM_RPM_LIMIT` set it also paces the starts evenly. 429, 5xx and timeouts retry through `utils/retry.py` (`llm.RETRY_POLICY`); a validation failure is never a transport retry, and a transport error never uses the validation retry.
 - `fakes.ScriptedChatModel` replays scripted replies for offline tests and backs `LLM_PROVIDER=fake`; its `with_structured_output(include_raw=True)` follows the real providers' `{raw, parsed, parsing_error}` contract.
 - **Per-role provider (ADR-018).** `LLM_ROLES` overrides the default provider and model for listed roles, as `role=provider:model` pairs (the model id may itself contain `:`, so split on the first `:` only).
 - **Model chain.** `get_chat_model(role)` returns a `ModelChain`: the role's model (from `LLM_ROLES`, else `LLM_PROVIDER` plus the role's model id) followed by the `LLM_FALLBACKS` models, all built at the role's temperature, plus the cache directory. A role without its own `LLM_MODEL_<ROLE>` uses `classifier`→router, `caller`→writer, `simulator`→writer, `judge`→extractor. Missing keys or model ids fail at build time, fallbacks included.
@@ -727,6 +727,7 @@ A cleanup job runs on startup (the FastAPI lifespan, after the MongoDB indexes) 
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | for example a friend's machine over Tailscale |
 | `LLM_MODEL_ROUTER` / `_EXTRACTOR` / `_WRITER` | — | model ids per role |
 | `LLM_MAX_CONCURRENCY` | `4` | stays under free-tier RPM |
+| `LLM_RPM_LIMIT` | `0` (off) | added in T-40; spaces model call starts `60 / n` s apart (a retry counts as a call); Gemini's free Flash Lite tier allows 15 per minute |
 | `LLM_TIMEOUT_S` | `60` | per-request timeout for every provider; SDK-level retries are off (`utils/retry.py` owns retries) |
 | `LLM_MODEL_CLASSIFIER` / `_CALLER` / `_SIMULATOR` / `_JUDGE` | — | added in T-53; empty → the defaults in §9 |
 | `LLM_ROLES` | empty | added in T-53; e.g. `simulator=ollama:qwen2.5:7b,judge=groq:<model>` |

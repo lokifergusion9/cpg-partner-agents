@@ -212,19 +212,47 @@ def get_chat_model(
 
 # --- concurrency --------------------------------------------------------------------
 
-# One semaphore per running event loop: a semaphore must not be shared across loops.
+# One semaphore and one pacer per running event loop: neither may be shared across loops.
 _semaphores: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = WeakKeyDictionary()
+
+
+class _Pacer:
+    """Spaces the start of model calls ``60 / rpm`` seconds apart (``LLM_RPM_LIMIT``)."""
+
+    def __init__(self, rpm: int, loop: asyncio.AbstractEventLoop) -> None:
+        self._interval = 60.0 / rpm
+        self._loop = loop
+        self._next = 0.0
+
+    async def wait(self) -> None:
+        now = self._loop.time()
+        start = max(now, self._next)
+        self._next = start + self._interval  # reserved before sleeping, so tasks queue in order
+        if start > now:
+            await asyncio.sleep(start - now)
+
+
+_pacers: WeakKeyDictionary[asyncio.AbstractEventLoop, _Pacer | None] = WeakKeyDictionary()
 
 
 @asynccontextmanager
 async def llm_slot(settings: Settings | None = None) -> AsyncIterator[None]:
-    """Hold one of ``LLM_MAX_CONCURRENCY`` slots for the duration of a model call."""
+    """Hold one of ``LLM_MAX_CONCURRENCY`` slots for the duration of a model call.
+
+    With ``LLM_RPM_LIMIT`` set, each call (a retry counts as one) also waits its turn so that
+    starts are spaced evenly, which keeps a free-tier requests-per-minute limit from answering 429.
+    """
     loop = asyncio.get_running_loop()
     semaphore = _semaphores.get(loop)
     if semaphore is None:
-        limit = (settings or get_settings()).llm_max_concurrency
-        semaphore = _semaphores[loop] = asyncio.Semaphore(limit)
+        active = settings or get_settings()
+        semaphore = _semaphores[loop] = asyncio.Semaphore(active.llm_max_concurrency)
+        rpm = active.llm_rpm_limit
+        _pacers[loop] = _Pacer(rpm, loop) if rpm > 0 else None
     async with semaphore:
+        pacer = _pacers.get(loop)
+        if pacer is not None:
+            await pacer.wait()
         yield
 
 
