@@ -1,0 +1,745 @@
+{
+  "suite": "routing",
+  "date": "2026-11-20",
+  "generated_at": "2026-11-19T21:32:27+00:00",
+  "git": "be29dbd",
+  "provider": "gemini",
+  "embedder": null,
+  "split": "test",
+  "n": 60,
+  "models": {
+    "router": "gemini:gemini-3.5-flash-lite"
+  },
+  "tokens": {
+    "router": 63245
+  },
+  "prompt_versions": {
+    "charlie": "charlie-v1",
+    "scout": "scout-v1",
+    "chase": "chase-v1"
+  },
+  "datasets": {
+    "routing.jsonl": "0ff35efb7cdfe4ef25592c47eb7bc467eb3cdae1970753c3c948eae0fed475db"
+  },
+  "config_overrides": {},
+  "cache": {},
+  "skipped": null,
+  "metrics": {
+    "n": 60,
+    "intent_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "per_intent": {
+      "discovery": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "cpg_qa": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "outreach": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "clarify": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "out_of_scope": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    },
+    "confusion": {
+      "discovery": {
+        "discovery": 21
+      },
+      "cpg_qa": {
+        "cpg_qa": 15
+      },
+      "outreach": {
+        "outreach": 9
+      },
+      "clarify": {
+        "clarify": 9
+      },
+      "out_of_scope": {
+        "out_of_scope": 6
+      }
+    },
+    "slot_accuracy": 0.9523809523809523,
+    "slot_n": 21,
+    "outreach_channel_accuracy": 0.6666666666666666,
+    "over_clarify_rate": 0.0
+  },
+  "notes": [
+    "split: test"
+  ],
+  "items": [
+    {
+      "id": "r021",
+      "query": "find organic tea distributors in Washington state",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r022",
+      "query": "I'm looking for independent grocers in Vermont that would carry small-batch maple syrup",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r023",
+      "query": "cookie brokers in Califronia please",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r024",
+      "query": "Mumbai me protein bar distributors chahiye",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r025",
+      "query": "who can co-pack our cold brew coffee in the Midwest",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r026",
+      "query": "top 10 specialty food retailers in New York for artisanal pickles",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r027",
+      "query": "find frozen dessert brokers",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r028",
+      "query": "natural food co-ops in Colorado that stock kombucha",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r029",
+      "query": "wholesalers for gluten free pasta in Ontario Canada",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r030",
+      "query": "snack brokers near Atlanta",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r031",
+      "query": "Delhi NCR me namkeen ke distributors dhundo",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r032",
+      "query": "any convenience store chains in Florida I could pitch our energy drink to?",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r033",
+      "query": "find contract manufacturers for vegan protein powder in Texas",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r034",
+      "query": "pet food distributers in Arizona",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r035",
+      "query": "which brokers in the Pacific Northwest handle refrigerated dips",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r036",
+      "query": "show me bakery supply wholesalers in Chicago",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": false,
+      "slots_ok": false,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r037",
+      "query": "I want to sell my hot honey to boutique gift shops in Nashville",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r038",
+      "query": "Karnataka me organic jaggery brokers",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r039",
+      "query": "find specialty coffee roasters who do private label in Oregon",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r040",
+      "query": "list foodservice distributors for plant-based burgers in the UK",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r041",
+      "query": "supermarket buyers for kids snacks in Ohio",
+      "gold": "discovery",
+      "predicted": "discovery",
+      "ok": true,
+      "slots_ok": true,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r042",
+      "query": "what is a food broker's typical commission?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r043",
+      "query": "How do retailers decide which products to stock?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r044",
+      "query": "explain trade spend versus slotting fees",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r045",
+      "query": "what is a category review?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r046",
+      "query": "do I need product liability insurance to sell to grocery chains?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r047",
+      "query": "what do the big natural-food distributors actually do for a brand?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r048",
+      "query": "How long does it usually take to get on a retailer's shelf?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r049",
+      "query": "what is a planogram?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r050",
+      "query": "EDI kya hota hai aur kya grocery stores isse maangte hain?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r051",
+      "query": "What are chargebacks and how do I avoid them?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r052",
+      "query": "Should a small brand start with brokers or sell direct to stores?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r053",
+      "query": "what does 'case pack' mean on a spec sheet?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r054",
+      "query": "how are promotions funded between a brand and a retailer",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r055",
+      "query": "what is a sell sheet and what goes in it?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r056",
+      "query": "wholesale price vs MSRP, how much margin do retailers expect?",
+      "gold": "cpg_qa",
+      "predicted": "cpg_qa",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r057",
+      "query": "email the top 5 and introduce our oat milk",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": "email",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r058",
+      "query": "draft an intro email to the second lead",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": "email",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r059",
+      "query": "write to the Texas broker about our hot sauce",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": "email",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r060",
+      "query": "send an email to all of them asking for a call next week",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": "email",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r061",
+      "query": "Draft emails to the verified ones",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": "email",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r062",
+      "query": "mail the distributors and mention our free shipping offer",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": "email",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r063",
+      "query": "ring the LA broker",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": false,
+      "slots_ok": null,
+      "gold_channel": "voice",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r064",
+      "query": "call the top 2",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": false,
+      "slots_ok": null,
+      "gold_channel": "voice",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r065",
+      "query": "phone the last lead and ask for a meeting",
+      "gold": "outreach",
+      "predicted": "outreach",
+      "ok": false,
+      "slots_ok": null,
+      "gold_channel": "voice",
+      "predicted_channel": "email",
+      "errors": []
+    },
+    {
+      "id": "r066",
+      "query": "find distributors",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r067",
+      "query": "I need retailers",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r068",
+      "query": "who should I sell to?",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r069",
+      "query": "find brokers in Texas",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r070",
+      "query": "partners for my brand",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r071",
+      "query": "search the web",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r072",
+      "query": "help me grow",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r073",
+      "query": "kuch buyers dhundo",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r074",
+      "query": "find me leads in California",
+      "gold": "clarify",
+      "predicted": "clarify",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r075",
+      "query": "what's the weather in Chicago tomorrow?",
+      "gold": "out_of_scope",
+      "predicted": "out_of_scope",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r076",
+      "query": "write a press release for our product launch",
+      "gold": "out_of_scope",
+      "predicted": "out_of_scope",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r077",
+      "query": "give me a stock tip on CPG companies",
+      "gold": "out_of_scope",
+      "predicted": "out_of_scope",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r078",
+      "query": "design a logo for my snack brand",
+      "gold": "out_of_scope",
+      "predicted": "out_of_scope",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r079",
+      "query": "translate my packaging copy into French",
+      "gold": "out_of_scope",
+      "predicted": "out_of_scope",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    },
+    {
+      "id": "r080",
+      "query": "tell me a joke about brokers",
+      "gold": "out_of_scope",
+      "predicted": "out_of_scope",
+      "ok": true,
+      "slots_ok": null,
+      "gold_channel": null,
+      "predicted_channel": null,
+      "errors": []
+    }
+  ]
+}

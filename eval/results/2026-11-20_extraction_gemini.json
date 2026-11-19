@@ -1,0 +1,666 @@
+{
+  "suite": "extraction",
+  "date": "2026-11-20",
+  "generated_at": "2026-11-19T21:35:33+00:00",
+  "git": "be29dbd",
+  "provider": "gemini",
+  "embedder": "BAAI/bge-small-en-v1.5",
+  "split": "test",
+  "n": 30,
+  "models": {
+    "extractor": "gemini:gemini-3.5-flash-lite"
+  },
+  "tokens": {
+    "extractor": 37011
+  },
+  "prompt_versions": {
+    "charlie": "charlie-v1",
+    "scout": "scout-v1",
+    "chase": "chase-v1"
+  },
+  "datasets": {
+    "extraction.jsonl": "19bcb7fd31079d233de2f7761d1f6095fa52608f5aef576f974b711a60c1d392"
+  },
+  "config_overrides": {},
+  "cache": {
+    "search_misses": 60,
+    "embed_misses": 41,
+    "embed_hits": 54
+  },
+  "skipped": null,
+  "metrics": {
+    "n": 30,
+    "email_precision": 1.0,
+    "email_recall": 0.7368421052631579,
+    "email_f1": 0.8484848484848484,
+    "phone_precision": 1.0,
+    "phone_recall": 0.7096774193548387,
+    "phone_f1": 0.8301886792452831,
+    "raw_hallucination_rate": 0.0625,
+    "eligible_hallucination_rate": 0.0,
+    "abstention_accuracy": 1.0,
+    "abstention_n": 4,
+    "company_name_match": 1.0,
+    "proposed_emails": 16,
+    "eligible_emails": 14
+  },
+  "notes": [
+    "every page is read with a generic intent for its partner type"
+  ],
+  "items": [
+    {
+      "id": "e001",
+      "case": "standard",
+      "gold_emails": [
+        "info@vieleandsons.com"
+      ],
+      "out_emails": [
+        "info@vieleandsons.com"
+      ],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e002",
+      "case": "standard",
+      "gold_emails": [
+        "info@centralcoop.coop"
+      ],
+      "out_emails": [
+        "info@centralcoop.coop"
+      ],
+      "gold_phones": [
+        "+12063291545",
+        "+12538884288"
+      ],
+      "out_phones": [
+        "+12063291545"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e003",
+      "case": "standard",
+      "gold_emails": [
+        "customerservice@olympiafood.coop"
+      ],
+      "out_emails": [
+        "customerservice@olympiafood.coop"
+      ],
+      "gold_phones": [
+        "+13603571106",
+        "+13607547666",
+        "+13609563870"
+      ],
+      "out_phones": [
+        "+13609563870"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e004",
+      "case": "standard",
+      "gold_emails": [
+        "info@urbanprimefoods.com"
+      ],
+      "out_emails": [
+        "info@urbanprimefoods.com"
+      ],
+      "gold_phones": [
+        "+13214991188"
+      ],
+      "out_phones": [
+        "+13214991188"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e005",
+      "case": "standard",
+      "gold_emails": [
+        "beveragecustomerservice@pinestatetrading.com"
+      ],
+      "out_emails": [
+        "beveragecustomerservice@pinestatetrading.com"
+      ],
+      "gold_phones": [
+        "+18004524633"
+      ],
+      "out_phones": [
+        "+18004524633"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e006",
+      "case": "standard",
+      "gold_emails": [
+        "customerservice@saxelbycheese.com",
+        "orders@saxelbycheese.com"
+      ],
+      "out_emails": [
+        "orders@saxelbycheese.com"
+      ],
+      "gold_phones": [
+        "+16468923077",
+        "+17182608660"
+      ],
+      "out_phones": [
+        "+16468923077"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e007",
+      "case": "standard",
+      "gold_emails": [
+        "orders@hosindia.com"
+      ],
+      "out_emails": [
+        "orders@hosindia.com"
+      ],
+      "gold_phones": [
+        "+17185074600"
+      ],
+      "out_phones": [
+        "+17185074600"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e008",
+      "case": "standard",
+      "gold_emails": [
+        "hotline@melissas.com"
+      ],
+      "out_emails": [],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e009",
+      "case": "standard",
+      "gold_emails": [
+        "info@formaggionewyork.com"
+      ],
+      "out_emails": [
+        "info@formaggionewyork.com"
+      ],
+      "gold_phones": [
+        "+12129828200",
+        "+18882123224"
+      ],
+      "out_phones": [
+        "+18882123224"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e010",
+      "case": "standard",
+      "gold_emails": [
+        "info@patelbros.com"
+      ],
+      "out_emails": [
+        "info@patelbros.com"
+      ],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e011",
+      "case": "standard",
+      "gold_emails": [
+        "sales@marisafoods.com"
+      ],
+      "out_emails": [],
+      "gold_phones": [
+        "+15624355629"
+      ],
+      "out_phones": [
+        "+15624355629"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "not_in_source"
+      ],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e012",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+14109848666"
+      ],
+      "out_phones": [
+        "+14109848666"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e013",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+14254889257"
+      ],
+      "out_phones": [
+        "+14254889257"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e014",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+18003262828"
+      ],
+      "out_phones": [
+        "+18003262828"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e015",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+14147120991"
+      ],
+      "out_phones": [
+        "+14147120991"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e016",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+17188609100"
+      ],
+      "out_phones": [
+        "+17188609100"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e017",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+16128148000",
+        "+19524730292",
+        "+19526973366"
+      ],
+      "out_phones": [
+        "+19526973366"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e018",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+17186220560"
+      ],
+      "out_phones": [
+        "+17186220560"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e019",
+      "case": "obfuscated",
+      "gold_emails": [
+        "info@harvestbrokerage.com"
+      ],
+      "out_emails": [],
+      "gold_phones": [
+        "+12816906707",
+        "+18323681234",
+        "+18325865562"
+      ],
+      "out_phones": [
+        "+18323681234"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "invalid_format"
+      ],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e020",
+      "case": "obfuscated",
+      "gold_emails": [
+        "hello@superasia.ca"
+      ],
+      "out_emails": [],
+      "gold_phones": [
+        "+14167465550"
+      ],
+      "out_phones": [
+        "+14167465550"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "e021",
+      "case": "contact_page",
+      "gold_emails": [
+        "info@bellavancebev.com"
+      ],
+      "out_emails": [
+        "info@bellavancebev.com"
+      ],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e022",
+      "case": "contact_page",
+      "gold_emails": [
+        "tastygrub@greatciao.com"
+      ],
+      "out_emails": [
+        "tastygrub@greatciao.com"
+      ],
+      "gold_phones": [
+        "+16125218725"
+      ],
+      "out_phones": [
+        "+16125218725"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e023",
+      "case": "contact_page",
+      "gold_emails": [
+        "info@orrmanscheeseshop.com"
+      ],
+      "out_emails": [
+        "info@orrmanscheeseshop.com"
+      ],
+      "gold_phones": [
+        "+19802263025"
+      ],
+      "out_phones": [
+        "+19802263025"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e024",
+      "case": "contact_page",
+      "gold_emails": [
+        "cheeseinfo@idealcheese.com"
+      ],
+      "out_emails": [
+        "cheeseinfo@idealcheese.com"
+      ],
+      "gold_phones": [
+        "+12126887579"
+      ],
+      "out_phones": [
+        "+12126887579"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e025",
+      "case": "contact_page",
+      "gold_emails": [
+        "info@aslifinefoods.com"
+      ],
+      "out_emails": [
+        "info@aslifinefoods.com"
+      ],
+      "gold_phones": [
+        "+16307391599"
+      ],
+      "out_phones": [
+        "+16307391599"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [
+        "verified"
+      ],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e026",
+      "case": "standard",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [
+        "+12104629620"
+      ],
+      "out_phones": [
+        "+12104629620"
+      ],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e027",
+      "case": "no_contact",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e028",
+      "case": "no_contact",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e029",
+      "case": "no_contact",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "e030",
+      "case": "no_contact",
+      "gold_emails": [],
+      "out_emails": [],
+      "gold_phones": [],
+      "out_phones": [],
+      "page_status": [
+        "ok"
+      ],
+      "statuses": [],
+      "errors": [],
+      "ok": true
+    }
+  ]
+}

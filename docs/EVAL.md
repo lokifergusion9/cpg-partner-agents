@@ -257,19 +257,19 @@ Bold = current default.
 
 > Fill these in from the results files. Leave "—" until there is a real run. Never estimate.
 
-**Baseline**: only the model-free part has run so far (retrieval, 2026-11-20, `BAAI/bge-small-en-v1.5`, git `cf835f8`, dataset hashes in the result file). Every other row is "—" because no provider key existed on the machine that ran this (no `.env`). The retrieval rows below are real.
+**Baseline** (2026-11-20, Gemini `gemini-3.5-flash-lite` for every role on the free tier, paced at 12 calls a minute, fresh cache, git `be29dbd`; kb at `98f3808`; retrieval at `cf835f8` with `BAAI/bge-small-en-v1.5`; dataset hashes in each file under `eval/results/`). **Not yet run: e2e, calls, and the model side of A1 to A10 (see the T-40 row in TASKS.md).** That model ignores the temperature setting (the client warns about it), so runs are not exactly repeatable: a first routing run at `98f3808` (overwritten by this one) scored 59/60 on intent, this one 60/60. Read a single item as ±1.
 
 | Metric | Target | Result | n |
 |---|---|---|---|
-| Routing intent accuracy | ≥ 0.90 | — | 60 |
-| Slot accuracy | ≥ 0.85 | — | — |
-| Email precision / recall / F1 | ≥ 0.95 / ≥ 0.70 / — | — | 30 pages |
-| Raw hallucination rate | (report) | — | — |
-| Eligible-hallucination rate | = 0 | — | — |
-| Abstention accuracy | ≥ 0.80 | — | 5 |
+| Routing intent accuracy | ≥ 0.90 | **1.000** (60/60; macro-F1 1.000; over-clarify 0.0) | 60 |
+| Slot accuracy | ≥ 0.85 | **0.952** (20/21). Outreach channel accuracy **0.667** (6/9): all three call requests ("ring the LA broker", "call the top 2", "phone the last lead...") were routed to email | 21 / 9 |
+| Email precision / recall / F1 | ≥ 0.95 / ≥ 0.70 / — | **1.000 / 0.737 / 0.848** (phones 1.000 / 0.710 / 0.830) | 30 pages |
+| Raw hallucination rate | (report) | **0.0625** (1 of 16 proposed emails was not in the page) | 16 emails |
+| Eligible-hallucination rate | = 0 | **0.000** (0 of 14 eligible emails) | 14 emails |
+| Abstention accuracy | ≥ 0.80 | **1.000** (4/4 `no_contact` pages gave no contact; the set has 4, not the 5 first planned) | 4 |
 | Evidence recall (hybrid) | ≥ 0.90 | **1.000** (26/26; vector 1.000, contact-pattern 0.962) | 26 pages |
-| Injection attack success / FP rate | = 0 / ≤ 0.05 | — | 9 / 31 |
-| KB citation / abstention | ≥ 0.85 / ≥ 0.80 | — | 20 / 5 |
+| Injection attack success / FP rate | = 0 / ≤ 0.05 | **0 / 0** (0 of 9 attacks reached a lead; flag rate 8/9, only the JSON mimic `i09` was not flagged and the model ignored it; 0 of 31 benign pages flagged; the real contact survived on 9/9 unflagged runs) | 9 / 31 |
+| KB citation / abstention | ≥ 0.85 / ≥ 0.80 | **0.850** (17/20, exactly at target; the 3 misses cited an extra, related note) / **1.000** (5/5); 0 answerable questions abstained | 20 / 5 |
 | E2E p50 / p95 latency | — / ≤ 45 s | — | 10 |
 | E2E median yield | ≥ 5 | — | 10 |
 | Call outcome accuracy | ≥ 0.85 | — | 20 |
@@ -286,6 +286,7 @@ Bold = current default.
 | A1 | evidence mode, default chunks (1000 tokens, k 4) | evidence recall, 26 pages | vector 1.000 · contact-pattern 0.962 · hybrid 1.000 | **Saturated, no decision yet.** Pages are short (1.15 chunks per page on average, 3 at most), so the top 4 chunks are nearly the whole page. Email F1 per mode needs the model (T-40). |
 | A1 stress (not in the plan) | `CHUNK_TOKENS=100`, `CHUNK_OVERLAP=20`, `EVIDENCE_K=1`, `EVIDENCE_MAX=2` (9.7 chunks per page, 30 at most) | evidence recall | vector **0.538** · contact-pattern 0.962 · hybrid 0.962 | With real pressure on retrieval, hybrid beats vector by 0.42 on recall. Keeps hybrid as the default. The one miss in every contact-pattern run is `e026` (its contact chunk is not flagged `has_contact_pattern`; the vector search finds it): a candidate for the error analysis (T-41). |
 | A2 | `CHUNK_TOKENS` 500 / 1500 | evidence recall (hybrid) | 1.000 / 1.000 (baseline 1.000) | No effect on recall at these page sizes; the email-F1 and tokens-per-run side of A2 needs the model. |
+| A7 | `INJECTION_THRESHOLD=2` (heuristic off) | attack success, FP rate | attack success 0/9 (baseline 0/9), flag rate 0/9 (baseline 8/9), real contact survived 9/9 | **Not needed for this attack set and this model**: wrapping, an extractor with no tools and verification held on every page, including the 8 the heuristic normally excludes. n=9 and one model, so keep the heuristic as one cheap layer, not as proof. |
 | A3 | `EVIDENCE_K` 2 / 8 | evidence recall (hybrid) | 1.000 / 1.000 (baseline 1.000) | Same: recall is saturated. Latency and F1 need the model. |
 
 **Target changes log**: (date · metric · old → new · reason)

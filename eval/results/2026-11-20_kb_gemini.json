@@ -1,0 +1,414 @@
+{
+  "suite": "kb",
+  "date": "2026-11-20",
+  "generated_at": "2026-11-19T21:04:01+00:00",
+  "git": "98f3808",
+  "provider": "gemini",
+  "embedder": "BAAI/bge-small-en-v1.5",
+  "split": "test",
+  "n": 25,
+  "models": {
+    "writer": "gemini:gemini-3.5-flash-lite"
+  },
+  "tokens": {
+    "writer": 34599
+  },
+  "prompt_versions": {
+    "charlie": "charlie-v1",
+    "scout": "scout-v1",
+    "chase": "chase-v1"
+  },
+  "datasets": {
+    "kb.jsonl": "62a284ac53daec4ec594e1f6f24c5ee39cbf504e96f4871f82350b3577c3d40c",
+    "kb notes": "ed334814d8c40f6753eda2b2f359851fce2c039dd87ef96128a506fac1077727"
+  },
+  "config_overrides": {},
+  "cache": {
+    "embed_misses": 48,
+    "embed_hits": 25
+  },
+  "skipped": null,
+  "metrics": {
+    "answerable": 20,
+    "unanswerable": 5,
+    "citation_accuracy": 0.85,
+    "answerable_abstained": 0.0,
+    "abstention_accuracy": 1.0
+  },
+  "notes": [],
+  "items": [
+    {
+      "id": "k001",
+      "question": "What is the difference between a broker and a distributor?",
+      "expected": [
+        "broker-vs-distributor-vs-wholesaler",
+        "distributor-role",
+        "food-broker-role"
+      ],
+      "cited": [
+        "broker-vs-distributor-vs-wholesaler",
+        "distributor-role",
+        "food-broker-role"
+      ],
+      "abstained": false,
+      "top_doc": "broker-vs-distributor-vs-wholesaler",
+      "top_score": 0.853,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k002",
+      "question": "What is a slotting fee and why do retailers charge it?",
+      "expected": [
+        "slotting-fees",
+        "trade-spend-basics"
+      ],
+      "cited": [
+        "slotting-fees"
+      ],
+      "abstained": false,
+      "top_doc": "slotting-fees",
+      "top_score": 0.921,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k003",
+      "question": "What kinds of costs count as trade spend?",
+      "expected": [
+        "trade-spend-basics"
+      ],
+      "cited": [
+        "trade-spend-basics"
+      ],
+      "abstained": false,
+      "top_doc": "trade-spend-basics",
+      "top_score": 0.772,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k004",
+      "question": "What does direct store delivery (DSD) mean and what products use it?",
+      "expected": [
+        "direct-store-delivery"
+      ],
+      "cited": [
+        "direct-store-delivery"
+      ],
+      "abstained": false,
+      "top_doc": "direct-store-delivery",
+      "top_score": 0.911,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k005",
+      "question": "How does the 4-5-4 retail calendar divide the year?",
+      "expected": [
+        "retail-calendar-454"
+      ],
+      "cited": [
+        "retail-calendar-454"
+      ],
+      "abstained": false,
+      "top_doc": "retail-calendar-454",
+      "top_score": 0.834,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k006",
+      "question": "What is private label and why do retailers like it?",
+      "expected": [
+        "private-label-basics"
+      ],
+      "cited": [
+        "private-label-basics"
+      ],
+      "abstained": false,
+      "top_doc": "private-label-basics",
+      "top_score": 0.856,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k007",
+      "question": "How much gluten can a food contain in the US and still be labelled gluten-free?",
+      "expected": [
+        "gluten-free-claims"
+      ],
+      "cited": [
+        "food-labeling-basics",
+        "gluten-free-claims"
+      ],
+      "abstained": false,
+      "top_doc": "gluten-free-claims",
+      "top_score": 0.821,
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "k008",
+      "question": "Which allergens must be declared on a packaged food label in the US?",
+      "expected": [
+        "allergen-labeling",
+        "food-labeling-basics"
+      ],
+      "cited": [
+        "allergen-labeling",
+        "food-labeling-basics",
+        "food-safety-fsma-overview"
+      ],
+      "abstained": false,
+      "top_doc": "allergen-labeling",
+      "top_score": 0.863,
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "k009",
+      "question": "What are the seven principles of HACCP?",
+      "expected": [
+        "haccp-basics"
+      ],
+      "cited": [
+        "haccp-basics"
+      ],
+      "abstained": false,
+      "top_doc": "haccp-basics",
+      "top_score": 0.763,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k010",
+      "question": "What is a planogram and how often is it reviewed?",
+      "expected": [
+        "category-management-and-planograms"
+      ],
+      "cited": [
+        "category-management-and-planograms"
+      ],
+      "abstained": false,
+      "top_doc": "category-management-and-planograms",
+      "top_score": 0.687,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k011",
+      "question": "What is a UPC and who issues the company prefix?",
+      "expected": [
+        "barcodes-upc-gs1"
+      ],
+      "cited": [
+        "barcodes-upc-gs1"
+      ],
+      "abstained": false,
+      "top_doc": "barcodes-upc-gs1",
+      "top_score": 0.757,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k012",
+      "question": "What should a brand check before choosing a co-packer?",
+      "expected": [
+        "co-packing-basics"
+      ],
+      "cited": [
+        "co-packing-basics"
+      ],
+      "abstained": false,
+      "top_doc": "co-packing-basics",
+      "top_score": 0.802,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k013",
+      "question": "What should a first outreach email to a broker or distributor include?",
+      "expected": [
+        "first-outreach-tips",
+        "pitching-to-buyers"
+      ],
+      "cited": [
+        "first-outreach-tips"
+      ],
+      "abstained": false,
+      "top_doc": "first-outreach-tips",
+      "top_score": 0.846,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k014",
+      "question": "What does a retail buyer want to know in a pitch?",
+      "expected": [
+        "category-management-and-planograms",
+        "pitching-to-buyers"
+      ],
+      "cited": [
+        "pitching-to-buyers"
+      ],
+      "abstained": false,
+      "top_doc": "pitching-to-buyers",
+      "top_score": 0.873,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k015",
+      "question": "What does a wholesaler do for small independent grocers?",
+      "expected": [
+        "broker-vs-distributor-vs-wholesaler",
+        "wholesaler-role"
+      ],
+      "cited": [
+        "wholesaler-role"
+      ],
+      "abstained": false,
+      "top_doc": "wholesaler-role",
+      "top_score": 0.855,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k016",
+      "question": "How does the price chain work from the shelf price back to the brand?",
+      "expected": [
+        "price-chain-and-margins"
+      ],
+      "cited": [
+        "price-chain-and-margins"
+      ],
+      "abstained": false,
+      "top_doc": "price-chain-and-margins",
+      "top_score": 0.87,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k017",
+      "question": "Which types of retailers are more open to new and small brands?",
+      "expected": [
+        "retailer-types-and-channels"
+      ],
+      "cited": [
+        "retailer-types-and-channels",
+        "wholesaler-role"
+      ],
+      "abstained": false,
+      "top_doc": "retailer-types-and-channels",
+      "top_score": 0.728,
+      "errors": [],
+      "ok": false
+    },
+    {
+      "id": "k018",
+      "question": "What does good manufacturing practice cover?",
+      "expected": [
+        "food-safety-fsma-overview",
+        "good-manufacturing-practice"
+      ],
+      "cited": [
+        "food-safety-fsma-overview",
+        "good-manufacturing-practice"
+      ],
+      "abstained": false,
+      "top_doc": "good-manufacturing-practice",
+      "top_score": 0.783,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k019",
+      "question": "What elements must a packaged food label carry in the US?",
+      "expected": [
+        "allergen-labeling",
+        "food-labeling-basics"
+      ],
+      "cited": [
+        "food-labeling-basics"
+      ],
+      "abstained": false,
+      "top_doc": "food-labeling-basics",
+      "top_score": 0.811,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k020",
+      "question": "What are the common routes a CPG product takes from the maker to the shelf?",
+      "expected": [
+        "channel-structure-overview",
+        "distributor-role",
+        "food-broker-role"
+      ],
+      "cited": [
+        "channel-structure-overview"
+      ],
+      "abstained": false,
+      "top_doc": "channel-structure-overview",
+      "top_score": 0.851,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k021",
+      "question": "How do I register a trademark for my brand name?",
+      "expected": [],
+      "cited": [],
+      "abstained": true,
+      "top_doc": "first-outreach-tips",
+      "top_score": 0.616,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k022",
+      "question": "What is the FDA's rule on putting CBD in food and drinks?",
+      "expected": [],
+      "cited": [],
+      "abstained": true,
+      "top_doc": "food-safety-fsma-overview",
+      "top_score": 0.685,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k023",
+      "question": "What are the rules for organic certification in the European Union?",
+      "expected": [],
+      "cited": [],
+      "abstained": true,
+      "top_doc": "food-safety-fsma-overview",
+      "top_score": 0.632,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k024",
+      "question": "How much does refrigerated trucking cost per mile?",
+      "expected": [],
+      "cited": [],
+      "abstained": true,
+      "top_doc": "direct-store-delivery",
+      "top_score": 0.549,
+      "errors": [],
+      "ok": true
+    },
+    {
+      "id": "k025",
+      "question": "How do I run paid Instagram ads for a snack brand?",
+      "expected": [],
+      "cited": [],
+      "abstained": true,
+      "top_doc": "pitching-to-buyers",
+      "top_score": 0.582,
+      "errors": [],
+      "ok": true
+    }
+  ]
+}
