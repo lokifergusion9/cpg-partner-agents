@@ -8,12 +8,22 @@ gate as an email. ``dispatch_voice`` then starts the call, and only for an appro
 
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Protocol
 
 from partner_agents.config import VoiceProvider
-from partner_agents.schemas import BrandProfile, Lead, OutreachDraft, StageError
+from partner_agents.prompts.caller import PROMPT_VERSION as CALLER_PROMPT_VERSION
+from partner_agents.schemas import (
+    BrandProfile,
+    CallMode,
+    CallPlaybook,
+    CallProgress,
+    CallRecord,
+    Lead,
+    OutreachDraft,
+    StageError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +38,41 @@ class VoiceCaller(Protocol):
 
 
 class MockVoiceCaller:
-    """Creates a call id and dials nothing."""
+    """Dials nobody: saves a new ``CallRecord`` that the Call tab or the API then runs as text
+    (``POST /api/calls/{id}/start``, ``/turn`` or ``/simulate``)."""
+
+    def __init__(
+        self, repo: "CallStore", playbook: CallPlaybook, clock: Callable[[], datetime]
+    ) -> None:
+        self._repo, self._playbook, self._clock = repo, playbook, clock
 
     async def start(self, draft: OutreachDraft) -> str:
-        return f"c_{uuid.uuid4().hex[:12]}"
+        record = new_call_record(draft, self._playbook, self._clock())
+        await self._repo.save_call(record)
+        return record.id
+
+
+class CallStore(Protocol):
+    async def save_call(self, call: CallRecord) -> None: ...
+
+
+def new_call_record(
+    draft: OutreachDraft, playbook: CallPlaybook, now: datetime, mode: CallMode = "live_text"
+) -> CallRecord:
+    """A call that has not started: opening stage, no turns."""
+    return CallRecord(
+        id=f"c_{uuid.uuid4().hex[:12]}",
+        user_id=draft.user_id,
+        lead_id=draft.lead_id,
+        run_id=draft.run_id,
+        draft_id=draft.id,
+        playbook_id=playbook.id,
+        playbook_version=playbook.version,
+        prompt_version=CALLER_PROMPT_VERSION,
+        mode=mode,
+        progress=CallProgress(),
+        started_at=now,
+    )
 
 
 def build_call_plan(

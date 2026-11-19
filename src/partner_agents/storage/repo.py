@@ -13,6 +13,7 @@ from typing import Protocol
 
 from partner_agents.schemas import (
     BrandProfile,
+    CallRecord,
     Lead,
     OutreachDraft,
     PageRecord,
@@ -22,7 +23,7 @@ from partner_agents.schemas import (
 
 
 class Repository(Protocol):
-    """Persistence for leads, outreach, runs, pages, the search cache and profiles."""
+    """Persistence for leads, outreach, runs, pages, the search cache, profiles and calls."""
 
     # leads: oldest first, ties in save order
     async def save_leads(self, leads: Sequence[Lead]) -> None: ...
@@ -58,6 +59,13 @@ class Repository(Protocol):
     async def save_profile(self, user_id: str, profile: BrandProfile) -> None: ...
     async def get_profile(self, user_id: str) -> BrandProfile | None: ...
 
+    # calls (saving an existing id replaces it: every turn saves the whole record)
+    async def save_call(self, call: CallRecord) -> None: ...
+    async def get_call(self, user_id: str, call_id: str) -> CallRecord | None: ...
+    async def list_calls(self, user_id: str, outcome: str | None = None) -> list[CallRecord]:
+        """The user's calls, newest first."""
+        ...
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -82,6 +90,7 @@ class InMemoryRepository:
         self._pages: dict[tuple[str, str], PageRecord] = {}
         self._searches: dict[str, tuple[datetime, list[SearchHit]]] = {}
         self._profiles: dict[str, BrandProfile] = {}
+        self._calls: dict[str, CallRecord] = {}
 
     # leads
 
@@ -185,3 +194,21 @@ class InMemoryRepository:
     async def get_profile(self, user_id: str) -> BrandProfile | None:
         profile = self._profiles.get(user_id)
         return profile.model_copy(deep=True) if profile else None
+
+    # calls
+
+    async def save_call(self, call: CallRecord) -> None:
+        self._calls[call.id] = call.model_copy(deep=True)
+
+    async def get_call(self, user_id: str, call_id: str) -> CallRecord | None:
+        call = self._calls.get(call_id)
+        return call.model_copy(deep=True) if call and call.user_id == user_id else None
+
+    async def list_calls(self, user_id: str, outcome: str | None = None) -> list[CallRecord]:
+        found = [
+            call
+            for call in self._calls.values()
+            if call.user_id == user_id and (outcome is None or call.progress.outcome == outcome)
+        ]
+        found.sort(key=lambda call: call.started_at, reverse=True)
+        return [call.model_copy(deep=True) for call in found]

@@ -285,7 +285,7 @@ def seeded_approval(
     if settings is not None:
         deps.settings = settings
     deps.gmail = gmail
-    deps.voice = voice
+    deps.voice = voice(deps.repo) if callable(voice) else voice  # a factory gets the repository
     keys = ("acme", "beta", "gamma")
     deps.writer = ByPageModel(
         messages=iter([]), pages={f"https://{k}.example/": [reply] for k in keys}
@@ -437,11 +437,20 @@ VOICE_FIRST = RouteDecision(
 
 
 def test_call_lead_1_plans_a_call_and_approval_creates_it(client: AsyncQdrantClient) -> None:
+    from datetime import UTC, datetime
+
+    from partner_agents.calls.playbook import load_playbook
     from partner_agents.graph.build import resume_turn
     from partner_agents.outreach.voice import MockVoiceCaller
     from partner_agents.schemas import ApprovalDecision
 
-    deps, graph, _ = seeded_approval(client, first_route=VOICE_FIRST, voice=MockVoiceCaller())
+    deps, graph, _ = seeded_approval(
+        client,
+        first_route=VOICE_FIRST,
+        voice=lambda repo: MockVoiceCaller(
+            repo, load_playbook("partner_intro"), lambda: datetime.now(UTC)
+        ),
+    )
 
     async def go() -> Any:
         paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="call lead 1")
@@ -470,9 +479,15 @@ def test_call_lead_1_plans_a_call_and_approval_creates_it(client: AsyncQdrantCli
     assert done.reply.startswith("Dispatch: 1 call(s) created (nobody was dialled)")
     saved = asyncio.run(deps.repo.list_drafts("u_1"))
     assert [(d.channel, d.status) for d in saved] == [("voice", "call_created")]
+    call = asyncio.run(deps.repo.get_call("u_1", done.state["call_ids"][0]))
+    assert call is not None and call.lead_id == "acme" and call.turns == []
+    assert call.progress.outcome is None and call.progress.stage == "opening"
 
 
 def test_a_rejected_call_plan_starts_nothing(client: AsyncQdrantClient) -> None:
+    from datetime import UTC, datetime
+
+    from partner_agents.calls.playbook import load_playbook
     from partner_agents.graph.build import resume_turn
     from partner_agents.outreach.voice import MockVoiceCaller
     from partner_agents.schemas import ApprovalDecision
@@ -484,7 +499,11 @@ def test_a_rejected_call_plan_starts_nothing(client: AsyncQdrantClient) -> None:
             started.append(draft.id)
             return await super().start(draft)
 
-    deps, graph, _ = seeded_approval(client, first_route=VOICE_FIRST, voice=Spy())
+    deps, graph, _ = seeded_approval(
+        client,
+        first_route=VOICE_FIRST,
+        voice=lambda repo: Spy(repo, load_playbook("partner_intro"), lambda: datetime.now(UTC)),
+    )
 
     async def go() -> Any:
         paused = await run_turn(graph, deps, thread_id="t_1", user_id="u_1", text="call lead 1")

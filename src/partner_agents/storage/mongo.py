@@ -24,6 +24,7 @@ from pymongo.errors import OperationFailure
 from partner_agents.config import Settings
 from partner_agents.schemas import (
     BrandProfile,
+    CallRecord,
     Lead,
     OutreachDraft,
     PageRecord,
@@ -32,7 +33,7 @@ from partner_agents.schemas import (
 )
 from partner_agents.storage.repo import InMemoryRepository, Repository
 
-_INTERNAL = ("_id", "_seq", "recipient_key")
+_INTERNAL = ("_id", "_seq", "recipient_key", "outcome")
 # MongoDB error codes for an existing index with the same keys but other options.
 _INDEX_CONFLICT_CODES = frozenset({85, 86})
 
@@ -94,6 +95,8 @@ class MongoRepository:
         await db["outreach"].create_index([("user_id", 1), ("recipient_key", 1), ("created_at", 1)])
         await db["outreach"].create_index([("user_id", 1), ("status", 1)])
         await db["runs"].create_index([("user_id", 1), ("started_at", -1)])
+        await db["calls"].create_index([("user_id", 1), ("started_at", -1)])
+        await db["calls"].create_index([("user_id", 1), ("outcome", 1)])
         await self._ttl_index("pages", "fetched_at", self._page_ttl)
         await self._ttl_index("search_cache", "created_at", self._search_ttl)
 
@@ -226,6 +229,23 @@ class MongoRepository:
         return BrandProfile.model_validate(
             {k: v for k, v in doc.items() if k not in (*_INTERNAL, "user_id")}
         )
+
+    # --- calls ---------------------------------------------------------------------
+
+    async def save_call(self, call: CallRecord) -> None:
+        doc = _doc(call, call.id, started_at=call.started_at, outcome=call.progress.outcome)
+        await self._db["calls"].replace_one({"_id": call.id}, doc, upsert=True)
+
+    async def get_call(self, user_id: str, call_id: str) -> CallRecord | None:
+        doc = await self._db["calls"].find_one({"_id": call_id, "user_id": user_id})
+        return _model(CallRecord, doc) if doc else None
+
+    async def list_calls(self, user_id: str, outcome: str | None = None) -> list[CallRecord]:
+        query: dict[str, Any] = {"user_id": user_id}
+        if outcome is not None:
+            query["outcome"] = outcome
+        cursor = self._db["calls"].find(query).sort(_order(("started_at", -1)))
+        return [_model(CallRecord, d) for d in await cursor.to_list()]
 
 
 def build_repository(settings: Settings) -> Repository:

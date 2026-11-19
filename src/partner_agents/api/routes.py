@@ -1,7 +1,7 @@
 """The HTTP routes (HLD §7). All paths are under ``/api``.
 
 ``/health`` is open. Every other route needs ``X-API-Key`` when ``APP_API_KEY`` is set (never in
-demo mode). The call routes (``/calls/...``) arrive with the call agent (M6).
+demo mode). The call routes run the call sub-graph (``graph/call.py``); ``/simulate`` is T-59.
 """
 
 import secrets
@@ -19,12 +19,17 @@ from partner_agents.graph.build import (
     resume_turn,
     run_turn,
 )
+from partner_agents.graph.call import CallDeps, CallGraph, CallNotActive, run_call_turn
 from partner_agents.schemas import (
     ApprovalDecision,
     BrandProfile,
+    CallOutcome,
+    CallRecord,
+    CallStage,
     Intent,
     Lead,
     OutreachDraft,
+    RuleCheck,
     RunRecord,
     StageError,
 )
@@ -194,6 +199,86 @@ async def put_profile(body: ProfileBody, ctx: Ctx) -> BrandProfile:
     profile = BrandProfile.model_validate(body.model_dump(exclude={"user_id"}))
     await ctx.deps.repo.save_profile(body.user_id, profile)
     return profile
+
+
+# --- calls (HLD §6.11) ----------------------------------------------------------------
+
+CallId = Annotated[str, Path(pattern=ID_PATTERN)]
+
+
+class CallTurnBody(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class CallTurnResponse(BaseModel):
+    call_id: str
+    stage: CallStage
+    reply: str
+    checks: list[RuleCheck]
+    ended: bool
+    outcome: CallOutcome | None
+
+
+def _call_deps(ctx: Context) -> tuple[CallGraph, CallDeps]:
+    if ctx.call_graph is None or ctx.deps.calls is None:
+        raise ApiError(503, "calls_unavailable", "The call agent is not configured.")
+    return ctx.call_graph, ctx.deps.calls
+
+
+def _turn_response(record: CallRecord) -> CallTurnResponse:
+    last = record.turns[-1]
+    return CallTurnResponse(
+        call_id=record.id,
+        stage=record.progress.stage,
+        reply=last.text,
+        checks=last.checks,
+        ended=record.progress.outcome is not None,
+        outcome=record.progress.outcome,
+    )
+
+
+async def _call_turn(ctx: Context, user_id: str, call_id: str, text: str | None) -> CallRecord:
+    graph, deps = _call_deps(ctx)
+    async with ctx.lock(f"call:{call_id}"):
+        try:
+            record, _ = await run_call_turn(
+                graph, deps, user_id=user_id, call_id=call_id, partner_text=text
+            )
+        except LookupError as exc:
+            raise ApiError(404, "call_not_found", "No such call.") from exc
+        except CallNotActive as exc:
+            raise ApiError(409, exc.code, str(exc)) from exc
+    return record
+
+
+@router.post("/calls/{call_id}/start")
+async def start_call(call_id: CallId, user_id: UserId, ctx: Ctx) -> CallTurnResponse:
+    """The opening line of an approved call (created by the mock caller at dispatch)."""
+    return _turn_response(await _call_turn(ctx, user_id, call_id, None))
+
+
+@router.post("/calls/{call_id}/turn")
+async def call_turn(
+    call_id: CallId, body: CallTurnBody, user_id: UserId, ctx: Ctx
+) -> CallTurnResponse:
+    """One partner turn typed as text (``live_text``); the reply is the agent's next line."""
+    return _turn_response(await _call_turn(ctx, user_id, call_id, body.text))
+
+
+@router.get("/calls")
+async def list_calls(
+    ctx: Ctx, user_id: UserId, outcome: Annotated[str | None, Query(max_length=32)] = None
+) -> list[CallRecord]:
+    calls = await ctx.deps.repo.list_calls(user_id, outcome=outcome)
+    return [call.model_copy(update={"turns": []}) for call in calls]  # turns omitted
+
+
+@router.get("/calls/{call_id}")
+async def get_call(call_id: CallId, user_id: UserId, ctx: Ctx) -> CallRecord:
+    record = await ctx.deps.repo.get_call(user_id, call_id)
+    if record is None:
+        raise ApiError(404, "call_not_found", "No such call.")
+    return record
 
 
 # --- health -------------------------------------------------------------------------

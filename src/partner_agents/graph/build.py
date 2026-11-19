@@ -29,8 +29,11 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from partner_agents import schemas
+from partner_agents.calls.playbook import load_playbook
+from partner_agents.calls.reply import CheckedReply
 from partner_agents.config import Settings
 from partner_agents.graph import approval, call_plan, charlie, chase, dispatch, rate_gate
+from partner_agents.graph.call import CallDeps, CallGraph, build_call_graph
 from partner_agents.graph.rate_gate import RunLimiter
 from partner_agents.graph.scout import ScoutDeps, add_scout_nodes
 from partner_agents.graph.state import AgentState
@@ -85,6 +88,8 @@ class AppDeps:
     voice: VoiceCaller | None = None
     # Limits discovery runs per key. The API sets one; the CLI and tests run without.
     rate_limiter: RunLimiter | None = None
+    # The call agent's models and playbook (HLD §6.11). Without it the /calls routes are off.
+    calls: CallDeps | None = None
 
     async def aclose(self) -> None:
         await self.scout.fetcher.aclose()
@@ -111,6 +116,14 @@ def build_app_deps(settings: Settings) -> AppDeps:
         store=VectorStore(client, embedder),
         model=get_chat_model("extractor", settings=settings),
     )
+    calls = CallDeps(
+        settings=settings,
+        repo=repo,
+        playbook=load_playbook(settings.call_playbook),
+        classifier=get_chat_model("classifier", settings=settings),
+        caller=get_chat_model("caller", settings=settings),
+    )
+    mock = MockVoiceCaller(repo, calls.playbook, calls.clock)
     return AppDeps(
         settings=settings,
         repo=repo,
@@ -119,8 +132,9 @@ def build_app_deps(settings: Settings) -> AppDeps:
         router=get_chat_model("router", settings=settings),
         writer=get_chat_model("writer", settings=settings),
         gmail=HttpxGmailClient(settings) if settings.outreach_mode != "outbox" else None,
-        voice=MockVoiceCaller() if settings.voice_provider == "mock" else None,
+        voice=mock if settings.voice_provider == "mock" else None,
         checkpointer=build_checkpointer(settings),
+        calls=calls,
     )
 
 
@@ -158,6 +172,7 @@ def checkpoint_serde() -> JsonPlusSerializer:
         and issubclass(obj, BaseModel)
         and obj.__module__ == schemas.__name__
     ]
+    allowed.append((CheckedReply.__module__, CheckedReply.__name__))  # the call sub-graph state
     return JsonPlusSerializer(allowed_msgpack_modules=allowed)
 
 
@@ -211,6 +226,12 @@ class Context:
     locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = field(
         default_factory=weakref.WeakValueDictionary
     )
+    # The call sub-graph, compiled from ``deps.calls`` (its own checkpoint threads: call ids).
+    call_graph: CallGraph | None = None
+
+    def __post_init__(self) -> None:
+        if self.call_graph is None and self.deps is not None and self.deps.calls is not None:
+            self.call_graph = build_call_graph(self.deps.calls)
 
     def lock(self, thread_id: str) -> asyncio.Lock:
         """One turn at a time per thread, so two requests cannot interleave its state."""

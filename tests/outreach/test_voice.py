@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from langchain_core.messages import HumanMessage
 
+from partner_agents.calls.playbook import load_playbook
 from partner_agents.config import Settings
 from partner_agents.graph.call_plan import make_call_plan
 from partner_agents.graph.chase import NO_PROFILE
@@ -76,10 +77,18 @@ def dispatch(d: OutreachDraft, provider: str, caller: Any, allowlist: list[str] 
 
 
 def test_the_mock_caller_creates_a_call_without_a_number_or_an_allowlist() -> None:
-    caller = MockVoiceCaller()
+    repo = InMemoryRepository()
+    caller = MockVoiceCaller(repo, load_playbook("partner_intro"), lambda: NOW)
     result, call_id, error = dispatch(draft(recipient=""), "mock", caller)
     assert (result.status, error) == ("call_created", None)
     assert call_id is not None and call_id.startswith("c_")
+    record = asyncio.run(repo.get_call("u", call_id))
+    assert record is not None and (record.draft_id, record.lead_id, record.turns) == (
+        "d1",
+        "l1",
+        [],
+    )
+    assert (record.progress.stage, record.mode, record.started_at) == ("opening", "live_text", NOW)
 
 
 @pytest.mark.parametrize(

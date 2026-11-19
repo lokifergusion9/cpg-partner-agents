@@ -503,20 +503,18 @@ The call agent runs a first partner-discovery call for an approved voice draft (
 **Sub-graph, one invocation per partner turn**
 
 ```
-partner text ─► call_classify ─► call_advance ─► call_reply ─► call_check ─┬─ pass ───────────► call_persist ─► agent text
-                                                     ▲                     ├─ fail, 1st time ─► call_reply (regenerate with the failed rule ids)
-                                                     └─────────────────────┘  fail, 2nd time ─► stage fallback_line ─► call_persist
+partner text ─► call_classify ─► call_advance ─► call_reply ─► call_persist ─► agent text
+                                                  (checks + regenerate once + fallback line, inside the node)
 ```
 
-The first agent turn (opening) skips `call_classify`. The sub-graph uses its own checkpoint thread keyed by `call_id`.
+The first agent turn (opening) skips `call_classify`. The sub-graph uses its own checkpoint thread keyed by `call_id`. The `CallRecord` in the repository is the source of truth and is passed in on every turn. `run_call_turn` raises `CallNotActive` (codes `call_ended`, `call_already_started`, `call_not_started`, `profile_not_found`) or `LookupError` for an unknown call.
 
 | Node | Input → output | Notes |
 |---|---|---|
 | `call_classify` | partner text + current stage + last 4 turns → `TurnSignals` | `classifier` role, temp 0, through `invoke_structured`. Partner text goes through `wrap_untrusted(kind="call_partner")` |
 | `call_advance` | `CallProgress` + `TurnSignals` + playbook + brand → new `CallProgress` + `Directive` | **pure function** `calls/stages.advance()`; no LLM |
-| `call_reply` | `Directive` + stage rules + universal rules + selected facts + slots + last 6 turns → agent text | `caller` role, temp 0.4, `prompts/caller.py` |
-| `call_check` | agent text + context → `list[RuleCheck]` | deterministic checks, `calls/checks.py` |
-| `call_persist` | turn → `CallRecord` | ends the call when `progress.outcome` is set; creates the follow-up draft |
+| `call_reply` | `Directive` + stage rules + universal rules + selected facts + slots + last 6 turns → checked agent text | `caller` role, temp 0.4, `prompts/caller.py`. Runs the deterministic checks of `calls/checks.py` itself (`calls/reply.write_reply`): a failed reply is regenerated once with the failed rule ids, then the stage `fallback_line` is used |
+| `call_persist` | turn → `CallRecord` | ends the call when `progress.outcome` is set; for `meeting_booked`, `callback_booked` and `escalated_to_human` it sets `meeting_at` and saves a confirmation email draft (`pending_approval`, only to a verified email) |
 
 **Stage machine (`calls/stages.py`), in priority order for every partner turn**
 
@@ -577,7 +575,7 @@ Soft rules (empathy, not pushy, answers the actual question) have `check="judge"
 
 ## 7. API (`api/`)
 
-All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` and `thread_id` match `[A-Za-z0-9_-]{1,64}`. `/health` is open and reports configuration only (no outbound call, no secret). The `/calls` routes arrive with the call agent (M6). If `APP_API_KEY` is set, the `X-API-Key` header is required (not in demo mode, which uses a per-session anonymous `user_id` plus rate limits).
+All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` and `thread_id` match `[A-Za-z0-9_-]{1,64}`. `/health` is open and reports configuration only (no outbound call, no secret). The `/calls` routes take `?user_id`; an unknown call (or another user's) is 404 `call_not_found`, a turn that does not fit the call's state is 409 (`call_ended`, `call_already_started`, `call_not_started`, `profile_not_found`), and 503 `calls_unavailable` means no call agent is configured. `/calls/{id}/simulate` arrives with T-59. If `APP_API_KEY` is set, the `X-API-Key` header is required (not in demo mode, which uses a per-session anonymous `user_id` plus rate limits).
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
@@ -673,7 +671,7 @@ Expiry is decided at read time against an injectable clock, because a Mongo TTL 
 
 **`MongoRepository` (`storage/mongo.py`, ADR-028).** Built from `MONGODB_URI` and `MONGODB_DATABASE` by `build_repository(settings)` (no URI means `InMemoryRepository`); the app calls `ensure_indexes()` at startup, which creates the indexes above and the two TTL indexes (`pages.fetched_at` = `DATA_TTL_DAYS`, `search_cache.created_at` = 24 h; if `DATA_TTL_DAYS` changed it updates the index with `collMod` instead of failing). A model is stored as its JSON form plus real BSON datetimes for `created_at`, `started_at` and `fetched_at`; the natural id is the `_id` (so saving an existing id replaces it); `_seq` (a nanosecond counter) keeps equal timestamps in save order. The client uses `tz_aware=True`, so values come back timezone-aware. MongoDB keeps milliseconds, so microseconds are dropped. Expiry is still decided at read time with the injected clock; the TTL index only cleans up. The same `RepositoryContract` runs offline on a small fake collection (`tests/storage/fake_mongo.py`: logic) and with `pytest -m live` against a real server (`MONGODB_URI`; it creates and drops a throwaway database).
 
-**Checkpoints.** With `MONGODB_URI` set, `build_checkpointer()` returns `langgraph.checkpoint.mongodb.MongoDBSaver` on a synchronous `MongoClient`, with `serde=checkpoint_serde()` and `ttl=DATA_TTL_DAYS` in seconds, and `build_graph` uses it instead of `InMemorySaver`. Without a URI a restart loses the conversations that wait for approval. The `calls` group arrives with T-58. All stored timestamps are timezone-aware.
+**Checkpoints.** With `MONGODB_URI` set, `build_checkpointer()` returns `langgraph.checkpoint.mongodb.MongoDBSaver` on a synchronous `MongoClient`, with `serde=checkpoint_serde()` and `ttl=DATA_TTL_DAYS` in seconds, and `build_graph` uses it instead of `InMemorySaver`. Without a URI a restart loses the conversations that wait for approval. The `calls` group (`save_call`, `get_call`, `list_calls`, newest first, optional `outcome` filter) is in both repositories (T-58). The call checkpoint state also allowlists `calls.reply.CheckedReply`. All stored timestamps are timezone-aware.
 
 ### 8.2 Qdrant (Cloud free tier; local mode when `QDRANT_URL` is empty)
 

@@ -20,6 +20,9 @@ import pytest
 
 from partner_agents.schemas import (
     BrandProfile,
+    CallProgress,
+    CallRecord,
+    CallTurn,
     Lead,
     OutreachDraft,
     PageRecord,
@@ -139,6 +142,24 @@ def brand(**overrides: Any) -> BrandProfile:
         "sign_off": "Thanks",
     }
     return BrandProfile(**{**fields, **overrides})
+
+
+def call(id: str = "c_1", **overrides: Any) -> CallRecord:
+    fields: dict[str, Any] = {
+        "id": id,
+        "user_id": "u_1",
+        "lead_id": "l_1",
+        "run_id": "r_1",
+        "draft_id": "d_1",
+        "playbook_id": "partner_intro",
+        "playbook_version": "1",
+        "prompt_version": "caller-v1",
+        "mode": "live_text",
+        "progress": CallProgress(proposed_slot=T0 + timedelta(days=1)),
+        "turns": [CallTurn(index=0, speaker="agent", text="Hello", stage="opening")],
+        "started_at": T0,
+    }
+    return CallRecord(**{**fields, **overrides})
 
 
 class RepositoryContract:
@@ -345,3 +366,29 @@ class RepositoryContract:
     def test_profiles_are_per_user(self, repo: Repository) -> None:
         run(repo.save_profile("u_1", brand()))
         assert run(repo.get_profile("u_2")) is None
+
+    # --- calls ----------------------------------------------------------------------
+
+    def test_call_round_trip_and_replace(self, repo: Repository) -> None:
+        record = call()
+        run(repo.save_call(record))
+        assert run(repo.get_call("u_1", "c_1")) == record
+        ended = record.model_copy(
+            update={"progress": CallProgress(stage="ended", outcome="opted_out")}
+        )
+        run(repo.save_call(ended))
+        stored = run(repo.get_call("u_1", "c_1"))
+        assert stored is not None and stored.progress.outcome == "opted_out"
+
+    def test_calls_are_per_user_and_list_newest_first(self, repo: Repository) -> None:
+        run(repo.save_call(call("c_old")))
+        run(repo.save_call(call("c_new", started_at=T0 + timedelta(hours=1))))
+        run(repo.save_call(call("c_other", user_id="u_2")))
+        assert run(repo.get_call("u_2", "c_old")) is None
+        assert [c.id for c in run(repo.list_calls("u_1"))] == ["c_new", "c_old"]
+
+    def test_calls_filter_by_outcome(self, repo: Repository) -> None:
+        run(repo.save_call(call("c_1")))
+        booked = CallProgress(stage="ended", outcome="meeting_booked")
+        run(repo.save_call(call("c_2", progress=booked)))
+        assert [c.id for c in run(repo.list_calls("u_1", outcome="meeting_booked"))] == ["c_2"]
