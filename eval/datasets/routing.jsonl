@@ -18,3 +18,63 @@
 {"id": "r018", "split": "dev", "query": "help with my snacks", "intent": "clarify"}
 {"id": "r019", "split": "dev", "query": "Write me a poem", "intent": "out_of_scope"}
 {"id": "r020", "split": "dev", "query": "write my brand's Instagram caption for the launch", "intent": "out_of_scope"}
+{"id": "r021", "split": "test", "query": "find organic tea distributors in Washington state", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "organic tea", "location": "Washington"}}
+{"id": "r022", "split": "test", "query": "I'm looking for independent grocers in Vermont that would carry small-batch maple syrup", "intent": "discovery", "discovery": {"partner_type": "retailer", "product_category": "maple syrup", "location": "Vermont"}}
+{"id": "r023", "split": "test", "query": "cookie brokers in Califronia please", "intent": "discovery", "discovery": {"partner_type": "broker", "product_category": "cookies", "location": "California"}}
+{"id": "r024", "split": "test", "query": "Mumbai me protein bar distributors chahiye", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "protein bars", "location": "Mumbai"}}
+{"id": "r025", "split": "test", "query": "who can co-pack our cold brew coffee in the Midwest", "intent": "discovery", "discovery": {"partner_type": "manufacturer", "product_category": "cold brew coffee", "location": "Midwest"}}
+{"id": "r026", "split": "test", "query": "top 10 specialty food retailers in New York for artisanal pickles", "intent": "discovery", "discovery": {"partner_type": "retailer", "product_category": "artisanal pickles", "location": "New York"}}
+{"id": "r027", "split": "test", "query": "find frozen dessert brokers", "intent": "discovery", "discovery": {"partner_type": "broker", "product_category": "frozen desserts", "location": null}}
+{"id": "r028", "split": "test", "query": "natural food co-ops in Colorado that stock kombucha", "intent": "discovery", "discovery": {"partner_type": "retailer", "product_category": "kombucha", "location": "Colorado"}}
+{"id": "r029", "split": "test", "query": "wholesalers for gluten free pasta in Ontario Canada", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "gluten-free pasta", "location": "Ontario, Canada"}}
+{"id": "r030", "split": "test", "query": "snack brokers near Atlanta", "intent": "discovery", "discovery": {"partner_type": "broker", "product_category": "snacks", "location": "Atlanta"}}
+{"id": "r031", "split": "test", "query": "Delhi NCR me namkeen ke distributors dhundo", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "namkeen", "location": "Delhi NCR"}}
+{"id": "r032", "split": "test", "query": "any convenience store chains in Florida I could pitch our energy drink to?", "intent": "discovery", "discovery": {"partner_type": "retailer", "product_category": "energy drinks", "location": "Florida"}}
+{"id": "r033", "split": "test", "query": "find contract manufacturers for vegan protein powder in Texas", "intent": "discovery", "discovery": {"partner_type": "manufacturer", "product_category": "vegan protein powder", "location": "Texas"}}
+{"id": "r034", "split": "test", "query": "pet food distributers in Arizona", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "pet food", "location": "Arizona"}}
+{"id": "r035", "split": "test", "query": "which brokers in the Pacific Northwest handle refrigerated dips", "intent": "discovery", "discovery": {"partner_type": "broker", "product_category": "refrigerated dips", "location": "Pacific Northwest"}}
+{"id": "r036", "split": "test", "query": "show me bakery supply wholesalers in Chicago", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "bakery supplies", "location": "Chicago"}}
+{"id": "r037", "split": "test", "query": "I want to sell my hot honey to boutique gift shops in Nashville", "intent": "discovery", "discovery": {"partner_type": "retailer", "product_category": "hot honey", "location": "Nashville"}}
+{"id": "r038", "split": "test", "query": "Karnataka me organic jaggery brokers", "intent": "discovery", "discovery": {"partner_type": "broker", "product_category": "organic jaggery", "location": "Karnataka"}}
+{"id": "r039", "split": "test", "query": "find specialty coffee roasters who do private label in Oregon", "intent": "discovery", "discovery": {"partner_type": "manufacturer", "product_category": "specialty coffee", "location": "Oregon"}}
+{"id": "r040", "split": "test", "query": "list foodservice distributors for plant-based burgers in the UK", "intent": "discovery", "discovery": {"partner_type": "distributor", "product_category": "plant-based burgers", "location": "UK"}}
+{"id": "r041", "split": "test", "query": "supermarket buyers for kids snacks in Ohio", "intent": "discovery", "discovery": {"partner_type": "retailer", "product_category": "kids snacks", "location": "Ohio"}}
+{"id": "r042", "split": "test", "query": "what is a food broker's typical commission?", "intent": "cpg_qa"}
+{"id": "r043", "split": "test", "query": "How do retailers decide which products to stock?", "intent": "cpg_qa"}
+{"id": "r044", "split": "test", "query": "explain trade spend versus slotting fees", "intent": "cpg_qa"}
+{"id": "r045", "split": "test", "query": "what is a category review?", "intent": "cpg_qa"}
+{"id": "r046", "split": "test", "query": "do I need product liability insurance to sell to grocery chains?", "intent": "cpg_qa"}
+{"id": "r047", "split": "test", "query": "what do the big natural-food distributors actually do for a brand?", "intent": "cpg_qa"}
+{"id": "r048", "split": "test", "query": "How long does it usually take to get on a retailer's shelf?", "intent": "cpg_qa"}
+{"id": "r049", "split": "test", "query": "what is a planogram?", "intent": "cpg_qa"}
+{"id": "r050", "split": "test", "query": "EDI kya hota hai aur kya grocery stores isse maangte hain?", "intent": "cpg_qa"}
+{"id": "r051", "split": "test", "query": "What are chargebacks and how do I avoid them?", "intent": "cpg_qa"}
+{"id": "r052", "split": "test", "query": "Should a small brand start with brokers or sell direct to stores?", "intent": "cpg_qa"}
+{"id": "r053", "split": "test", "query": "what does 'case pack' mean on a spec sheet?", "intent": "cpg_qa"}
+{"id": "r054", "split": "test", "query": "how are promotions funded between a brand and a retailer", "intent": "cpg_qa"}
+{"id": "r055", "split": "test", "query": "what is a sell sheet and what goes in it?", "intent": "cpg_qa"}
+{"id": "r056", "split": "test", "query": "wholesale price vs MSRP, how much margin do retailers expect?", "intent": "cpg_qa"}
+{"id": "r057", "split": "test", "query": "email the top 5 and introduce our oat milk", "intent": "outreach", "outreach_channel": "email", "lead_selector": "top 5", "context_leads": true}
+{"id": "r058", "split": "test", "query": "draft an intro email to the second lead", "intent": "outreach", "outreach_channel": "email", "lead_selector": "the second one", "context_leads": true}
+{"id": "r059", "split": "test", "query": "write to the Texas broker about our hot sauce", "intent": "outreach", "outreach_channel": "email", "lead_selector": "the Texas broker", "context_leads": true}
+{"id": "r060", "split": "test", "query": "send an email to all of them asking for a call next week", "intent": "outreach", "outreach_channel": "email", "lead_selector": "all of them", "context_leads": true}
+{"id": "r061", "split": "test", "query": "Draft emails to the verified ones", "intent": "outreach", "outreach_channel": "email", "lead_selector": "the verified ones", "context_leads": true}
+{"id": "r062", "split": "test", "query": "mail the distributors and mention our free shipping offer", "intent": "outreach", "outreach_channel": "email", "lead_selector": "the distributors", "context_leads": true}
+{"id": "r063", "split": "test", "query": "ring the LA broker", "intent": "outreach", "outreach_channel": "voice", "lead_selector": "the LA broker", "context_leads": true}
+{"id": "r064", "split": "test", "query": "call the top 2", "intent": "outreach", "outreach_channel": "voice", "lead_selector": "top 2", "context_leads": true}
+{"id": "r065", "split": "test", "query": "phone the last lead and ask for a meeting", "intent": "outreach", "outreach_channel": "voice", "lead_selector": "the last one", "context_leads": true}
+{"id": "r066", "split": "test", "query": "find distributors", "intent": "clarify"}
+{"id": "r067", "split": "test", "query": "I need retailers", "intent": "clarify"}
+{"id": "r068", "split": "test", "query": "who should I sell to?", "intent": "clarify"}
+{"id": "r069", "split": "test", "query": "find brokers in Texas", "intent": "clarify"}
+{"id": "r070", "split": "test", "query": "partners for my brand", "intent": "clarify"}
+{"id": "r071", "split": "test", "query": "search the web", "intent": "clarify"}
+{"id": "r072", "split": "test", "query": "help me grow", "intent": "clarify"}
+{"id": "r073", "split": "test", "query": "kuch buyers dhundo", "intent": "clarify"}
+{"id": "r074", "split": "test", "query": "find me leads in California", "intent": "clarify"}
+{"id": "r075", "split": "test", "query": "what's the weather in Chicago tomorrow?", "intent": "out_of_scope"}
+{"id": "r076", "split": "test", "query": "write a press release for our product launch", "intent": "out_of_scope"}
+{"id": "r077", "split": "test", "query": "give me a stock tip on CPG companies", "intent": "out_of_scope"}
+{"id": "r078", "split": "test", "query": "design a logo for my snack brand", "intent": "out_of_scope"}
+{"id": "r079", "split": "test", "query": "translate my packaging copy into French", "intent": "out_of_scope"}
+{"id": "r080", "split": "test", "query": "tell me a joke about brokers", "intent": "out_of_scope"}

@@ -64,7 +64,7 @@ src/partner_agents/
   utils/contacts.py  email / phone detection patterns (detect only; verify/ decides)
   web/html.py      page text assembly (main text, contact text, contact link)
   cli.py
-eval/              datasets/, run.py, metrics.py, results/
+eval/              datasets/, schemas.py (row models and loaders), run.py, metrics.py, results/
 data/kb/           CPG knowledge-base notes (public sources, cited)
 data/playbooks/    call playbooks (TOML, written from scratch for the fictional brand)
 data/personas/     demo personas for the Call tab (the eval personas live in eval/datasets/)
