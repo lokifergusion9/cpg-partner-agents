@@ -71,6 +71,9 @@ class RouteDecision(BaseModel):
     lead_selector: str | None = None           # "top 3", "the LA ones"; resolved by Chase
     clarifying_question: str | None = None     # set iff intent == "clarify"
     reason: str                                # short, for traces only
+    # json_schema_extra lists outreach_channel as REQUIRED in the schema sent to the provider (T-41):
+    # Gemini treats a field with a default as optional and Flash Lite then never filled it in.
+    # In Python the default still applies.
 
 class SearchHit(BaseModel):
     url: HttpUrl; title: str; snippet: str; rank: int; provider: str

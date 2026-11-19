@@ -3,11 +3,12 @@
 This module imports nothing from the rest of the package, so every layer can depend on it.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     AwareDatetime,
     BaseModel,
+    ConfigDict,
     EmailStr,
     Field,
     HttpUrl,
@@ -34,7 +35,19 @@ class DiscoveryIntent(BaseModel):
     raw_query: str
 
 
+def _channel_is_required(schema: dict[str, Any]) -> None:
+    """Send ``outreach_channel`` to the provider as a required field.
+
+    The Python field keeps its default (a decision built without it means ``email``), but a
+    provider treats a field with a default as optional, and Gemini Flash Lite then leaves it out
+    of every reply, so a call request is read as an email (eval routing baseline, 2026-11-20).
+    """
+    schema.setdefault("required", []).append("outreach_channel")
+
+
 class RouteDecision(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_channel_is_required)
+
     intent: Intent
     confidence: float = Field(ge=0, le=1)
     discovery: DiscoveryIntent | None = None  # set iff intent == "discovery"

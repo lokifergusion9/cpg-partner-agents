@@ -123,6 +123,16 @@ def test_route_defaults_to_the_email_channel() -> None:
     assert route.discovery is None
 
 
+def test_the_provider_schema_requires_the_channel_but_python_still_defaults_it() -> None:
+    """T-41: Gemini Flash Lite left an optional ``outreach_channel`` out of every reply, so every
+    call request was read as an email. The schema sent to the provider lists it as required."""
+    schema = s.RouteDecision.model_json_schema()
+    assert "outreach_channel" in schema["required"]
+    assert {"intent", "confidence", "reason"} <= set(schema["required"])
+    assert "discovery" not in schema["required"]  # the other optional fields stay optional
+    assert s.RouteDecision(intent="clarify", confidence=0.5, reason="x").outreach_channel == "email"
+
+
 def test_unknown_intent_is_rejected() -> None:
     with pytest.raises(ValidationError):
         s.RouteDecision(intent="chitchat", confidence=0.9, reason="x")  # type: ignore[arg-type]
