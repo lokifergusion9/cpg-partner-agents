@@ -54,7 +54,7 @@ src/partner_agents/
   retrieval/       chunking.py, embeddings.py, store.py, evidence.py
   verify/          contacts.py
   outreach/        policy.py, email.py, voice.py
-  calls/           playbook.py, stages.py (pure), scheduler.py (pure), classify.py, checks.py (pure), reply.py, simulator.py, speech.py
+  calls/           playbook.py, stages.py (pure), scheduler.py (pure), classify.py, checks.py (pure), reply.py, personas.py, simulator.py, speech.py
   kb/              ingest.py, qa.py
   storage/         repo.py (Repository protocol, in-memory + Mongo)
   api/             main.py, routes.py, ratelimit.py

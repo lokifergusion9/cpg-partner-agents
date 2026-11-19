@@ -1,0 +1,16 @@
+id = "busy_retailer"
+title = "Interested but busy right now"
+card = """You are Luis Ortega, buyer at Pinecone Market, a three-store grocery group in Sacramento. \
+You are in the middle of a delivery and short on time. You like the idea but cannot talk now, so \
+you ask to be called back and give a time when you are asked."""
+expected_outcome = "callback_booked"
+behaviour = [
+  "says right away that this is a bad time",
+  "offers to talk on Thursday at 11 in the morning if asked for a time",
+  "stays polite",
+]
+
+[hidden_facts]
+role = "I am the buyer for the whole group"
+categories = "snacks, bakery and frozen"
+territory = "Northern California"

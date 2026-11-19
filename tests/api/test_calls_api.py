@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,17 +14,21 @@ from partner_agents.fakes import ScriptedChatModel
 from partner_agents.graph.call import CallDeps
 from partner_agents.outreach.voice import new_call_record
 from partner_agents.prompts.caller import CallerReply
+from partner_agents.prompts.simulator import SimulatorReply
 from partner_agents.schemas import OutreachDraft, TurnSignals
 from tests.graph.test_build import (  # noqa: F401  (fixtures are used by name)
     client,
     instant_retries,
     make_deps,
 )
-from tests.graph.test_call import LINE, NOW, PLAYBOOK, make_lead
+from tests.graph.test_call import BOOKING, BOOKING_TEXTS, LINE, NOW, PLAYBOOK, make_lead
 
 
 def call_deps(
-    qdrant: AsyncQdrantClient, signals: list[TurnSignals], reply: CallerReply = LINE
+    qdrant: AsyncQdrantClient,
+    signals: list[TurnSignals],
+    reply: CallerReply = LINE,
+    simulator: ScriptedChatModel | None = None,
 ) -> tuple[TestClient, str]:
     deps = make_deps(qdrant)
     deps.calls = CallDeps(
@@ -32,6 +37,7 @@ def call_deps(
         playbook=PLAYBOOK,
         classifier=ScriptedChatModel.scripted(*signals),
         caller=ScriptedChatModel.repeating(reply),
+        simulator=simulator,
         clock=lambda: NOW,
     )
     draft = OutreachDraft(
@@ -132,3 +138,76 @@ def test_the_calls_are_off_when_the_call_agent_is_not_configured(
     with TestClient(create_app(make_deps(client), with_ui=False)) as http:
         response = http.post("/api/calls/c_1/start", params={"user_id": "u_1"})
     assert (response.status_code, response.json()["error"]["code"]) == (503, "calls_unavailable")
+
+
+# --- /simulate (T-59) ---------------------------------------------------------------
+
+
+def simulating(
+    qdrant: AsyncQdrantClient,
+    signals: list[TurnSignals],
+    texts: list[str] | None,
+) -> tuple[TestClient, str]:
+    simulator = (
+        None
+        if texts is None
+        else ScriptedChatModel.scripted(*(SimulatorReply(text=t) for t in texts))
+    )
+    return call_deps(qdrant, signals, simulator=simulator)
+
+
+def error_code(response: Any) -> str:
+    return str(response.json()["error"]["code"])
+
+
+def test_simulate_plays_a_persona_through_to_the_outcome(
+    client: AsyncQdrantClient,  # noqa: F811
+) -> None:
+    http, call_id = simulating(client, BOOKING, BOOKING_TEXTS)
+    with http:
+        response = http.post(
+            f"/api/calls/{call_id}/simulate",
+            params={"user_id": "u_1"},
+            json={"persona_id": "interested_broker"},
+        )
+        assert response.status_code == 200
+        record = response.json()
+        assert record["progress"]["outcome"] == "meeting_booked"
+        assert (record["mode"], record["persona_id"]) == ("simulate", "interested_broker")
+        assert record["followup_draft_id"] and record["meeting_at"]
+        again = http.post(
+            f"/api/calls/{call_id}/simulate",
+            params={"user_id": "u_1"},
+            json={"persona_id": "interested_broker"},
+        )
+        assert (again.status_code, error_code(again)) == (409, "call_already_started")
+
+
+@pytest.mark.parametrize(
+    ("call", "persona", "texts", "status", "code"),
+    [
+        ("known", "nobody", [], 404, "persona_not_found"),
+        ("known", "../etc", [], 422, None),
+        ("c_nope", "gatekeeper", [], 404, "call_not_found"),
+        ("known", "gatekeeper", None, 503, "simulator_unavailable"),
+        ("known", "gatekeeper", [], 502, "simulator_error"),  # the scripted simulator runs dry
+    ],
+)
+def test_simulate_refusals(
+    client: AsyncQdrantClient,  # noqa: F811
+    call: str,
+    persona: str,
+    texts: list[str] | None,
+    status: int,
+    code: str | None,
+) -> None:
+    http, call_id = simulating(client, BOOKING, texts)
+    with http:
+        response = http.post(
+            f"/api/calls/{call_id if call == 'known' else call}/simulate",
+            params={"user_id": "u_1"},
+            json={"persona_id": persona},
+        )
+    assert response.status_code == status
+    if code is not None:
+        assert error_code(response) == code

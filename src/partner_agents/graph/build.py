@@ -122,6 +122,7 @@ def build_app_deps(settings: Settings) -> AppDeps:
         playbook=load_playbook(settings.call_playbook),
         classifier=get_chat_model("classifier", settings=settings),
         caller=get_chat_model("caller", settings=settings),
+        simulator=get_chat_model("simulator", settings=settings),
     )
     mock = MockVoiceCaller(repo, calls.playbook, calls.clock)
     return AppDeps(

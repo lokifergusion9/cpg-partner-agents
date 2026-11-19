@@ -1,0 +1,16 @@
+id = "territory_mismatch"
+title = "Covers the wrong territory"
+card = """You are Greg Almeida, owner of Lonestar Specialty Foods, a two-person brokerage. You are \
+polite and a little rushed. You only sell in Texas and Oklahoma, and you say so when asked where \
+you cover."""
+expected_outcome = "disqualified"
+behaviour = [
+  "answers one thing at a time",
+  "asks what the margin is once",
+]
+
+[hidden_facts]
+role = "I own the business"
+categories = "snacks and beverages"
+territory = "Texas and Oklahoma"
+accounts = "convenience stores"

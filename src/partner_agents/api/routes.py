@@ -1,9 +1,11 @@
 """The HTTP routes (HLD §7). All paths are under ``/api``.
 
 ``/health`` is open. Every other route needs ``X-API-Key`` when ``APP_API_KEY`` is set (never in
-demo mode). The call routes run the call sub-graph (``graph/call.py``); ``/simulate`` is T-59.
+demo mode). The call routes run the call sub-graph (``graph/call.py``); ``/simulate`` plays a
+demo persona against it (``calls/simulator.py``).
 """
 
+import logging
 import secrets
 import uuid
 from typing import Annotated, Any
@@ -12,6 +14,8 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, Field
 
 from partner_agents.api.errors import ApiError
+from partner_agents.calls.personas import PersonaError, load_persona
+from partner_agents.calls.simulator import simulate_call
 from partner_agents.graph.build import (
     Context,
     NothingToApprove,
@@ -33,6 +37,8 @@ from partner_agents.schemas import (
     RunRecord,
     StageError,
 )
+
+logger = logging.getLogger(__name__)
 
 ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 UserId = Annotated[str, Query(pattern=ID_PATTERN)]
@@ -263,6 +269,34 @@ async def call_turn(
 ) -> CallTurnResponse:
     """One partner turn typed as text (``live_text``); the reply is the agent's next line."""
     return _turn_response(await _call_turn(ctx, user_id, call_id, body.text))
+
+
+class SimulateBody(BaseModel):
+    persona_id: str = Field(pattern=r"^[a-z0-9_]{1,64}$")
+
+
+@router.post("/calls/{call_id}/simulate")
+async def simulate(call_id: CallId, body: SimulateBody, user_id: UserId, ctx: Ctx) -> CallRecord:
+    """Play a demo persona against a call that has not started; returns the whole call."""
+    graph, deps = _call_deps(ctx)
+    if deps.simulator is None:
+        raise ApiError(503, "simulator_unavailable", "No simulator model is configured.")
+    try:
+        persona = load_persona(body.persona_id)
+    except PersonaError as exc:
+        raise ApiError(404, "persona_not_found", "No such persona.") from exc
+    async with ctx.lock(f"call:{call_id}"):
+        try:
+            return await simulate_call(
+                graph, deps, deps.simulator, persona, user_id=user_id, call_id=call_id
+            )
+        except LookupError as exc:
+            raise ApiError(404, "call_not_found", "No such call.") from exc
+        except CallNotActive as exc:
+            raise ApiError(409, exc.code, str(exc)) from exc
+        except Exception as exc:  # the turns played so far stay saved
+            logger.warning("simulation failed", extra={"error_type": type(exc).__name__})
+            raise ApiError(502, "simulator_error", "The simulator failed mid-call.") from exc
 
 
 @router.get("/calls")

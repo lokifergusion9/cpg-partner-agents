@@ -78,6 +78,7 @@ class CallDeps:
     playbook: CallPlaybook
     classifier: BaseChatModel
     caller: BaseChatModel
+    simulator: BaseChatModel | None = None  # plays the partner in ``simulate`` mode
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
 

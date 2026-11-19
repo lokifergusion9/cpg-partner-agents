@@ -275,7 +275,16 @@ class CallRecord(BaseModel):
     followup_draft_id: str | None = None   # confirmation email, pending approval
     started_at: AwareDatetime; finished_at: AwareDatetime | None = None
     tokens: dict[str, int] = {}; providers: dict[str, str] = {}
+
+class Persona(BaseModel):                  # a partner the `simulator` role plays (T-59)
+    id: str; title: str                    # title = one line for the Call tab picker
+    card: str                              # who they are and how they talk (second person)
+    hidden_facts: dict[str, str] = {}      # revealed only when asked (keys name qualification slots)
+    behaviour: list[str] = []
+    expected_outcome: CallOutcome | None = None   # a demo hint, not a promise
 ```
+
+**Personas (`calls/personas.py`, T-59).** `load_persona(id)` reads `data/personas/<id>.toml` (same id rule and checks as playbooks, one `PersonaError`); `list_personas()` returns them by id. The six demo personas are `interested_broker`, `busy_retailer`, `stop_calling`, `gatekeeper`, `territory_mismatch` and `wants_human`. The eval personas (30, EVAL §3.7) live in `eval/datasets/` and the demo code never reads them. T-62 extends `Persona` with `split`, `archetype`, `gold_outcome` and `must_hold` for the eval set.
 
 **Playbook validation (`calls/playbook.py`, T-54).** `load_playbook(id)` reads `data/playbooks/<id>.toml` with `tomllib` (the id must match `[a-z0-9_]{1,64}`, so it cannot leave the directory, and must equal the file's `id`), validates it against `CallPlaybook` and then checks: the six stages `opening → discovery → qualification → pitch → handoff → closing` in this order; unique rule ids across universal and stage rules; every `check="code"` rule has a `check_id` in `CHECK_IDS` (the eight reply checks of §6.11 plus `C-FLOW`) and no other rule has one; slots only in qualification (at least one), no slot twice, `required_slots ⊆ slots`; stage goals and fallback lines use only the fields `{brand_name}`, `{founder_name}`, `{category}`, `{sign_off}`; no blank banned phrase. Every broken rule is reported in one `PlaybookError`. The sample brand's fact tags name the qualification slots (`role`, `categories`, `territory`, `accounts`, `volume`) plus value keywords such as `natural` or `oregon`, for fact selection.
 
@@ -569,13 +578,13 @@ Soft rules (empathy, not pushy, answers the actual question) have `check="judge"
 
 **Writing a line (`calls/reply.write_reply`, T-57).** The `caller` role answers through `invoke_structured` with a one-field `CallerReply(text)`, so the fallback chain, validation retry and cache apply (the same choice as `KBAnswer`). Prompt (`prompts/caller.py`, `caller-v1`): the universal rules and the current stage's goal and rules with their ids, the data rule, the word limit; then the directive as an instruction built only from our own data (`directive_text`), the allowed facts by id, the slot values and the last 6 turns, with partner words (turns **and** slot values) wrapped by `wrap_untrusted(kind="call_partner")`. A failing line is regenerated once with `"<rule id>: <detail>"` for each failure; a model error counts as a failed attempt. If the second line fails too, `fallback_line()` is used: `OPT_OUT_LINE` after an opt-out, an action line for `disclose_ai`, `answer_question`, `confirm_booking` and `acknowledge` (`prompts/caller.ACTION_FALLBACKS`), otherwise the stage's `fallback_line` (closing's for an ended call). The fallback's checks are recorded too. The classifier (`calls/classify.classify_turn`) sees the stage, the slot just asked, the last 4 turns and the new partner turn, all partner text wrapped, and returns `TurnSignals` only; it is told to write regions in full.
 
-**Modes.** `simulate`: `calls/simulator.py` alternates a persona model (`simulator` role, temp 0.8, persona card from `data/personas/` in the UI, or from `eval/datasets/personas.jsonl` in the eval runner) with the sub-graph until the call ends or `max_turns`. `live_text`: each `POST /api/calls/{id}/turn` is one partner turn. `live_voice`: the UI records audio, `calls/speech.py` transcribes it, the turn runs as `live_text`, and the reply is synthesised; audio is never stored. `vapi`: stretch.
+**Modes.** `simulate`: `calls/simulator.py` alternates a persona model (`simulator` role, temp 0.8, persona card from `data/personas/` in the UI, or from `eval/datasets/personas.jsonl` in the eval runner) with the sub-graph until the call ends or `max_turns` (the stage machine ends it as `incomplete`). `simulate_call` takes a call that has not started, saves it with `mode="simulate"` and the `persona_id`, plays the opening and then alternates; the simulator prompt (`prompts/simulator.py`, `simulator-v1`) shows the persona card, the hidden facts, the behaviour list and the last 8 turns, and the persona's line is capped at 500 characters. A simulator failure propagates and the turns played so far stay saved. `live_text`: each `POST /api/calls/{id}/turn` is one partner turn. `live_voice`: the UI records audio, `calls/speech.py` transcribes it, the turn runs as `live_text`, and the reply is synthesised; audio is never stored. `vapi`: stretch.
 
 **After the call.** `meeting_booked`, `callback_booked` and `escalated_to_human` create a confirmation `OutreachDraft` (email, `pending_approval`) to the lead's verified email when there is one, and record `meeting_at`. Nothing is sent without approval (ADR-012).
 
 ## 7. API (`api/`)
 
-All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` and `thread_id` match `[A-Za-z0-9_-]{1,64}`. `/health` is open and reports configuration only (no outbound call, no secret). The `/calls` routes take `?user_id`; an unknown call (or another user's) is 404 `call_not_found`, a turn that does not fit the call's state is 409 (`call_ended`, `call_already_started`, `call_not_started`, `profile_not_found`), and 503 `calls_unavailable` means no call agent is configured. `/calls/{id}/simulate` arrives with T-59. If `APP_API_KEY` is set, the `X-API-Key` header is required (not in demo mode, which uses a per-session anonymous `user_id` plus rate limits).
+All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` and `thread_id` match `[A-Za-z0-9_-]{1,64}`. `/health` is open and reports configuration only (no outbound call, no secret). The `/calls` routes take `?user_id`; an unknown call (or another user's) is 404 `call_not_found`, a turn that does not fit the call's state is 409 (`call_ended`, `call_already_started`, `call_not_started`, `profile_not_found`), and 503 `calls_unavailable` means no call agent is configured. If `APP_API_KEY` is set, the `X-API-Key` header is required (not in demo mode, which uses a per-session anonymous `user_id` plus rate limits).
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
@@ -588,7 +597,7 @@ All routes are under `/api` (docs at `/api/docs`). JSON in and out. `user_id` an
 | PUT | `/profile` | `BrandProfile` (+`user_id`) | `BrandProfile` |
 | POST | `/calls/{call_id}/start` | — | `CallTurnResponse` (the opening line) |
 | POST | `/calls/{call_id}/turn` | `{text}` | `CallTurnResponse` |
-| POST | `/calls/{call_id}/simulate` | `{persona_id}` | `CallRecord` (the full simulated call) |
+| POST | `/calls/{call_id}/simulate` | `?user_id` + `{persona_id}` | `CallRecord` (the full simulated call); 404 `persona_not_found` / `call_not_found`, 409 `call_already_started`, 502 `simulator_error`, 503 `simulator_unavailable` |
 | GET | `/calls` | `?user_id&outcome?` | `list[CallRecord]` (turns omitted) |
 | GET | `/calls/{call_id}` | | `CallRecord` |
 | GET | `/health` | | `{status, llm, qdrant, mongo, search}` |

@@ -364,3 +364,12 @@ class CallRecord(BaseModel):
     finished_at: AwareDatetime | None = None
     tokens: dict[str, int] = {}
     providers: dict[str, str] = {}
+
+
+class Persona(BaseModel):  # a partner the ``simulator`` role plays (HLD §6.11, EVAL §3.7)
+    id: str
+    title: str  # one line for the picker in the Call tab
+    card: str  # who they are and how they talk; written in the second person
+    hidden_facts: dict[str, str] = {}  # revealed only when asked
+    behaviour: list[str] = []
+    expected_outcome: CallOutcome | None = None  # a hint for the demo, not a promise
