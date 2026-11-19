@@ -11,6 +11,8 @@ import re
 from collections.abc import Iterator, Sequence
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
@@ -104,6 +106,23 @@ class HashingEmbedder:
 
     async def embed_query(self, text: str) -> list[float]:
         return self._vector(text)
+
+
+class FakeSpeech:
+    """Offline stand-in for ``calls.speech.LocalSpeech``: scripted transcripts, silent audio."""
+
+    def __init__(self, transcripts: Sequence[str] = ()) -> None:
+        self._transcripts = iter(transcripts)
+        self.heard: list[int] = []  # the number of samples of each recording
+        self.spoken: list[str] = []
+
+    def transcribe(self, samples: npt.NDArray[np.float32]) -> str:
+        self.heard.append(int(samples.size))
+        return next(self._transcripts, "")
+
+    def synthesize(self, text: str) -> tuple[int, npt.NDArray[Any]]:
+        self.spoken.append(text)
+        return 22_050, np.zeros(2_205, dtype=np.int16)
 
 
 def _parsed_or_raise(result: dict[str, Any]) -> Any:

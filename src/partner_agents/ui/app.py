@@ -38,6 +38,7 @@ from partner_agents.ui.calls import (
     play_turn,
     simulate_selected,
     view_call,
+    voice_turn,
 )
 
 USER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -390,11 +391,20 @@ def build_ui(get_ctx: Callable[[], Context], demo_mode: bool = False) -> gr.Bloc
         view = await play_turn(get_ctx(), user_id, call_id, text)
         return (*await call_update(user_id, call_id, view), "")
 
+    async def on_voice(
+        user_id: str, call_id: str | None, recording: tuple[int, Any] | None
+    ) -> tuple[Any, ...]:
+        if not USER_ID.match(user_id):
+            return (*await on_calls_refresh(user_id, call_id), None, None)
+        result = await voice_turn(get_ctx(), user_id, call_id, recording)
+        return (*await call_update(user_id, call_id, result.view), result.audio, None)
+
     async def on_live_start(user_id: str, call_id: str | None) -> tuple[Any, ...]:
         update = await on_live(user_id, call_id, None)
         return update[:-1]  # no text box to clear
 
-    with gr.Blocks(title="CPG Partner Agents") as ui:
+    # delete_cache: Gradio keeps a playback copy of the voice reply; remove it soon (ADR-021).
+    with gr.Blocks(title="CPG Partner Agents", delete_cache=(60, 120)) as ui:
         gr.Markdown(
             "# CPG Partner Agents\nFind partners, check their contacts against the source page, "
             "and approve every message before it leaves."
@@ -492,6 +502,15 @@ def build_ui(get_ctx: Callable[[], Context], demo_mode: bool = False) -> gr.Bloc
             with gr.Row():
                 call_msg = gr.Textbox(label="Your line as the partner", scale=4)
                 call_send = gr.Button("Send", scale=1)
+            with gr.Accordion("Speak instead of typing (optional)", open=False):
+                gr.Markdown(
+                    "Needs `SPEECH_ENABLED=true` and the speech extra. The first press opens the "
+                    "call and the agent speaks. Then record your answer and press the button "
+                    "again. Audio stays in memory and is never saved by the app."
+                )
+                mic = gr.Audio(sources=["microphone"], type="numpy", label="Your recording")
+                voice_btn = gr.Button("Speak")
+                agent_audio = gr.Audio(label="Agent", autoplay=True, interactive=False)
             call_panel = gr.Markdown("")
 
         with gr.Tab("Runs"):
@@ -556,6 +575,7 @@ def build_ui(get_ctx: Callable[[], Context], demo_mode: bool = False) -> gr.Bloc
         live_btn.click(on_live_start, [user_box, call_pick], call_outputs)
         for trigger in (call_send.click, call_msg.submit):
             trigger(on_live, [user_box, call_pick, call_msg], [*call_outputs, call_msg])
+        voice_btn.click(on_voice, [user_box, call_pick, mic], [*call_outputs, agent_audio, mic])
         refresh_outbox.click(drafts_of, user_box, outbox_table)
         refresh_runs.click(runs_of, user_box, runs_table)
         load_btn.click(load_profile, user_box, fields)

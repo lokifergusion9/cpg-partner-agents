@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from partner_agents.calls.personas import PersonaError, list_personas, load_persona
 from partner_agents.calls.simulator import simulate_call
+from partner_agents.calls.speech import Audio, speak, transcribe
 from partner_agents.graph.build import Context
 from partner_agents.graph.call import CallNotActive, run_call_turn
 from partner_agents.prompts.caller import format_slot
@@ -175,6 +176,80 @@ async def simulate_selected(
             logger.warning("simulation failed", extra={"error_type": type(exc).__name__})
             notice = SIMULATOR_FAILED
     return await view_call(ctx, user_id, call_id, notice)
+
+
+VOICE_OFF = "Voice is off. Install the extra and set SPEECH_ENABLED=true (see .env.example)."
+NOT_HEARD = "I did not hear anything. Record again."
+OPENED = "The agent opened the call. Record your answer."
+
+
+@dataclass
+class VoiceView:
+    """The Call tab after a recorded turn: the view and the agent's reply as audio."""
+
+    view: CallView
+    audio: Audio | None = None
+
+
+async def voice_turn(
+    ctx: Context, user_id: str, call_id: str | None, audio: Audio | None
+) -> VoiceView:
+    """One spoken turn (mode ``live_voice``). A call that has not started opens first.
+
+    The recording is transcribed in memory and the transcript is an ordinary partner turn; the
+    agent's line is synthesised in memory. Nothing is written to disk (ADR-021).
+    """
+    speech = ctx.deps.speech
+    if speech is None:
+        return VoiceView(await view_call(ctx, user_id, call_id, VOICE_OFF))
+    if not call_id:
+        return VoiceView(await view_call(ctx, user_id, None))
+    deps = ctx.deps.calls
+    if ctx.call_graph is None or deps is None:
+        return VoiceView(await view_call(ctx, user_id, call_id, NOT_CONFIGURED))
+    record = await ctx.deps.repo.get_call(user_id, call_id)
+    if record is None:
+        return VoiceView(await view_call(ctx, user_id, call_id, "No such call."))
+    if record.mode == "simulate":
+        return VoiceView(
+            await view_call(ctx, user_id, call_id, "A simulated call has no microphone.")
+        )
+    opening = not record.turns
+    heard = ""
+    if not opening:
+        try:
+            heard = await transcribe(speech, audio)
+        except Exception as exc:  # a bad recording or a failed model must not end the call
+            logger.warning("transcription failed", extra={"error_type": type(exc).__name__})
+            return VoiceView(
+                await view_call(ctx, user_id, call_id, "I could not read that recording.")
+            )
+        if not heard:
+            return VoiceView(await view_call(ctx, user_id, call_id, NOT_HEARD))
+    notice = OPENED if opening else f"You said: {heard}"
+    async with ctx.lock(f"call:{call_id}"):
+        try:
+            if record.mode != "live_voice":
+                await ctx.deps.repo.save_call(record.model_copy(update={"mode": "live_voice"}))
+            await run_call_turn(
+                ctx.call_graph, deps, user_id=user_id, call_id=call_id,
+                partner_text=None if opening else heard,
+            )  # fmt: skip
+        except LookupError:
+            notice = "No such call."
+        except CallNotActive as exc:
+            notice = _refusal(exc)
+    view = await view_call(ctx, user_id, call_id, notice)
+    saved = await ctx.deps.repo.get_call(user_id, call_id)
+    reply = (
+        saved.turns[-1] if saved and saved.turns and saved.turns[-1].speaker == "agent" else None
+    )
+    try:
+        sound = await speak(speech, reply.text) if reply else None
+    except Exception as exc:  # the transcript is still there; only the sound is missing
+        logger.warning("synthesis failed", extra={"error_type": type(exc).__name__})
+        sound, view.notice = None, f"{view.notice} (The voice failed, read the transcript.)"
+    return VoiceView(view, sound)
 
 
 async def play_turn(

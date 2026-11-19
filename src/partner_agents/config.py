@@ -190,6 +190,11 @@ class Settings(BaseSettings):
     call_max_turns: int = Field(30, ge=1)  # the smaller of this and the playbook's max_turns
     call_reply_max_words: int = Field(60, ge=10)
 
+    # Live voice (ADR-021): needs ``uv sync --extra speech`` and a Piper voice file
+    speech_enabled: bool = False
+    whisper_model: str = Field("base", pattern=r"^[A-Za-z0-9_./-]{1,100}$")
+    piper_voice: str | None = None  # path to a Piper ``.onnx`` voice
+
     # Tracing: enabled only when both keys are set
     langfuse_public_key: SecretStr | None = None
     langfuse_secret_key: SecretStr | None = None
@@ -228,6 +233,7 @@ class Settings(BaseSettings):
         "vapi_phone_number_id",
         "langfuse_host",
         "search_fallback",
+        "piper_voice",
         mode="before",
     )
     @classmethod

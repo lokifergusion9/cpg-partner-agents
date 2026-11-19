@@ -10,6 +10,7 @@ tokens and providers per role, prompt versions) saved at the end.
 """
 
 import asyncio
+import logging
 import uuid
 import weakref
 from collections.abc import Callable, Sequence
@@ -31,6 +32,7 @@ from pydantic import BaseModel
 from partner_agents import schemas
 from partner_agents.calls.playbook import load_playbook
 from partner_agents.calls.reply import CheckedReply
+from partner_agents.calls.speech import SpeechBackend, SpeechUnavailable, build_speech
 from partner_agents.config import Settings
 from partner_agents.graph import approval, call_plan, charlie, chase, dispatch, rate_gate
 from partner_agents.graph.call import CallDeps, CallGraph, build_call_graph
@@ -52,6 +54,8 @@ from partner_agents.storage.mongo import build_repository
 from partner_agents.storage.repo import Repository
 from partner_agents.web.fetch import Fetcher
 from partner_agents.web.search import SearchService, build_providers
+
+logger = logging.getLogger(__name__)
 
 Graph = CompiledStateGraph[AgentState, Any, Any, Any]
 
@@ -90,6 +94,8 @@ class AppDeps:
     rate_limiter: RunLimiter | None = None
     # The call agent's models and playbook (HLD §6.11). Without it the /calls routes are off.
     calls: CallDeps | None = None
+    # Local speech for ``live_voice`` (ADR-021); None unless SPEECH_ENABLED and it loaded.
+    speech: SpeechBackend | None = None
 
     async def aclose(self) -> None:
         await self.scout.fetcher.aclose()
@@ -125,6 +131,11 @@ def build_app_deps(settings: Settings) -> AppDeps:
         simulator=get_chat_model("simulator", settings=settings),
     )
     mock = MockVoiceCaller(repo, calls.playbook, calls.clock)
+    try:
+        speech = build_speech(settings)
+    except SpeechUnavailable as exc:  # the app still runs, in text only
+        logger.warning("speech is off: %s", exc)
+        speech = None
     return AppDeps(
         settings=settings,
         repo=repo,
@@ -136,6 +147,7 @@ def build_app_deps(settings: Settings) -> AppDeps:
         voice=mock if settings.voice_provider == "mock" else None,
         checkpointer=build_checkpointer(settings),
         calls=calls,
+        speech=speech,
     )
 
 

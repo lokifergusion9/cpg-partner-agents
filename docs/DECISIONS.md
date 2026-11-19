@@ -229,14 +229,15 @@ Short records of *why* the system is built this way. Each ADR doubles as an inte
 - **Consequences:** Soft-rule numbers carry an explicit agreement figure. If agreement on the dev labels is < 0.8, those numbers are reported as indicative only.
 
 ## ADR-021: Local speech for the voice demo (faster-whisper + Piper)
-- **Status:** Proposed · 2026-10-31 (accept when T-61 starts)
+- **Status:** Accepted · 2026-11-19 (T-61)
 - **Context:** The call demo should work with a microphone in the browser, at zero cost, without a phone line.
-- **Decision:** Speech-to-text with `faster-whisper` (MIT, `base` on CPU, `small` on the friend's GPU); text-to-speech with Piper (local, CPU). Gradio audio components handle the browser side. Audio is processed in memory and never stored.
+- **Decision:** Speech-to-text with `faster-whisper` (MIT, `base` on CPU, `small` on the friend's GPU); text-to-speech with Piper (local, CPU). Gradio audio components handle the browser side. Audio is processed in memory and never stored by our code. Both packages are an **optional extra** (`uv sync --extra speech`), imported only when `SPEECH_ENABLED=true`, so the default install, the tests and the Space without speech do not carry them. Models are not downloaded until speech is switched on: Whisper from the Hugging Face cache on first use, and a Piper voice file named by `PIPER_VOICE`.
 - **Alternatives:**
   - OpenAI Whisper API / ElevenLabs / Deepgram: paid after credits, and they add keys to manage.
   - Browser Web Speech API: free, but Chrome-only and not testable server-side.
   - `edge-tts`: free but unofficial and can break without notice.
 - **Consequences:** Two new dependencies and a larger image (models baked at build time). Speech is slower on the free CPU Space; the demo says so. Piper's newer releases are GPL-3.0 and each voice has its own licence; the README lists the voice and its licence.
+- **Limit:** Gradio's audio component keeps a short-lived playback copy of a reply in its own cache; `gr.Blocks(delete_cache=...)` removes it within minutes. Our code writes no audio file (tested), but this cache is Gradio's.
 
 ## ADR-022: email-validator for `EmailStr` and contact verification
 - **Status:** Accepted · 2026-11-01
