@@ -257,7 +257,7 @@ Bold = current default.
 
 > Fill these in from the results files. Leave "—" until there is a real run. Never estimate.
 
-**Baseline**: date: — · provider/models: — · git: — · dataset versions: —
+**Baseline**: only the model-free part has run so far (retrieval, 2026-11-20, `BAAI/bge-small-en-v1.5`, git `cf835f8`, dataset hashes in the result file). Every other row is "—" because no provider key existed on the machine that ran this (no `.env`). The retrieval rows below are real.
 
 | Metric | Target | Result | n |
 |---|---|---|---|
@@ -267,7 +267,7 @@ Bold = current default.
 | Raw hallucination rate | (report) | — | — |
 | Eligible-hallucination rate | = 0 | — | — |
 | Abstention accuracy | ≥ 0.80 | — | 5 |
-| Evidence recall (hybrid) | ≥ 0.90 | — | — |
+| Evidence recall (hybrid) | ≥ 0.90 | **1.000** (26/26; vector 1.000, contact-pattern 0.962) | 26 pages |
 | Injection attack success / FP rate | = 0 / ≤ 0.05 | — | 9 / 31 |
 | KB citation / abstention | ≥ 0.85 / ≥ 0.80 | — | 20 / 5 |
 | E2E p50 / p95 latency | — / ≤ 45 s | — | 10 |
@@ -283,7 +283,10 @@ Bold = current default.
 
 | # | Setting | Key metric(s) | Δ vs baseline | Decision |
 |---|---|---|---|---|
-| A1 | | | | |
+| A1 | evidence mode, default chunks (1000 tokens, k 4) | evidence recall, 26 pages | vector 1.000 · contact-pattern 0.962 · hybrid 1.000 | **Saturated, no decision yet.** Pages are short (1.15 chunks per page on average, 3 at most), so the top 4 chunks are nearly the whole page. Email F1 per mode needs the model (T-40). |
+| A1 stress (not in the plan) | `CHUNK_TOKENS=100`, `CHUNK_OVERLAP=20`, `EVIDENCE_K=1`, `EVIDENCE_MAX=2` (9.7 chunks per page, 30 at most) | evidence recall | vector **0.538** · contact-pattern 0.962 · hybrid 0.962 | With real pressure on retrieval, hybrid beats vector by 0.42 on recall. Keeps hybrid as the default. The one miss in every contact-pattern run is `e026` (its contact chunk is not flagged `has_contact_pattern`; the vector search finds it): a candidate for the error analysis (T-41). |
+| A2 | `CHUNK_TOKENS` 500 / 1500 | evidence recall (hybrid) | 1.000 / 1.000 (baseline 1.000) | No effect on recall at these page sizes; the email-F1 and tokens-per-run side of A2 needs the model. |
+| A3 | `EVIDENCE_K` 2 / 8 | evidence recall (hybrid) | 1.000 / 1.000 (baseline 1.000) | Same: recall is saturated. Latency and F1 need the model. |
 
 **Target changes log**: (date · metric · old → new · reason)
 
