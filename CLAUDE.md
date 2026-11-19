@@ -58,7 +58,7 @@ src/partner_agents/
   kb/              ingest.py, qa.py
   storage/         repo.py (Repository protocol, in-memory + Mongo)
   api/             main.py, routes.py, ratelimit.py
-  ui/              app.py (Gradio, mounted at /ui)
+  ui/              app.py (Gradio, mounted at /ui), calls.py (Call tab handlers)
   observability.py logging, run context, stage timer, tracing
   utils/retry.py   async retry with backoff + jitter
   utils/contacts.py  email / phone detection patterns (detect only; verify/ decides)

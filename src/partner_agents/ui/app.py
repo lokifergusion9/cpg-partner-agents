@@ -1,7 +1,8 @@
 """The Gradio UI, mounted at ``/ui`` (ADR-010, PRD §10).
 
 Tabs: Chat (with stage progress), Leads, Approvals (approve, edit or reject drafts; the outbox),
-Runs (timings, tokens, errors, trace link) and Settings (user id and brand profile). The UI
+Call (simulate a persona or play the partner as live text; handlers in ``ui/calls.py``), Runs
+(timings, tokens, errors, trace link) and Settings (user id and brand profile). The UI
 talks to the graph in-process through the same ``run_turn`` / ``resume_turn`` the API uses.
 
 The handlers at the top are plain functions so they can be tested without a browser; the layout
@@ -29,6 +30,14 @@ from partner_agents.schemas import (
     Lead,
     OutreachDraft,
     RunRecord,
+)
+from partner_agents.ui.calls import (
+    CallView,
+    list_call_options,
+    persona_options,
+    play_turn,
+    simulate_selected,
+    view_call,
 )
 
 USER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -354,6 +363,37 @@ def build_ui(get_ctx: Callable[[], Context], demo_mode: bool = False) -> gr.Bloc
             lead_rows(outcome.leads), await drafts_of(user_id),
         )  # fmt: skip
 
+    # --- call tab handlers (the logic is in ui/calls.py) ---
+
+    async def call_update(user_id: str, call_id: str | None, view: CallView) -> tuple[Any, ...]:
+        options = await list_call_options(get_ctx(), user_id)
+        ids = [value for _, value in options]
+        pick = gr.Dropdown(choices=options, value=call_id if call_id in ids else None)
+        return view.history, view.summary, view.notice, pick
+
+    async def on_calls_refresh(user_id: str, call_id: str | None) -> tuple[Any, ...]:
+        if not USER_ID.match(user_id):
+            return [], "", NEW_USER_HELP, gr.Dropdown(choices=[], value=None)
+        return await call_update(user_id, call_id, await view_call(get_ctx(), user_id, call_id))
+
+    async def on_simulate(
+        user_id: str, call_id: str | None, persona: str | None
+    ) -> tuple[Any, ...]:
+        if not USER_ID.match(user_id):
+            return await on_calls_refresh(user_id, call_id)
+        view = await simulate_selected(get_ctx(), user_id, call_id, persona)
+        return await call_update(user_id, call_id, view)
+
+    async def on_live(user_id: str, call_id: str | None, text: str | None) -> tuple[Any, ...]:
+        if not USER_ID.match(user_id):
+            return (*await on_calls_refresh(user_id, call_id), "")
+        view = await play_turn(get_ctx(), user_id, call_id, text)
+        return (*await call_update(user_id, call_id, view), "")
+
+    async def on_live_start(user_id: str, call_id: str | None) -> tuple[Any, ...]:
+        update = await on_live(user_id, call_id, None)
+        return update[:-1]  # no text box to clear
+
     with gr.Blocks(title="CPG Partner Agents") as ui:
         gr.Markdown(
             "# CPG Partner Agents\nFind partners, check their contacts against the source page, "
@@ -432,6 +472,28 @@ def build_ui(get_ctx: Callable[[], Context], demo_mode: bool = False) -> gr.Bloc
                     outputs=[chatbot, pending_state, outbox_table],
                 )
 
+        with gr.Tab("Call") as call_tab:
+            gr.Markdown(
+                "Approve a call plan in the Approvals tab (say *call the first lead* in Chat), "
+                "then play the call here. **Nobody is dialled.** *Simulate* lets a demo persona "
+                "answer. *Start live text call* lets you type the partner's lines."
+            )
+            with gr.Row():
+                call_pick = gr.Dropdown(choices=[], label="Call", interactive=True, scale=4)
+                refresh_calls = gr.Button("Refresh", scale=1)
+            persona_pick = gr.Dropdown(
+                choices=persona_options(), label="Persona (for Simulate)", interactive=True
+            )
+            with gr.Row():
+                simulate_btn = gr.Button("Simulate", variant="primary")
+                live_btn = gr.Button("Start live text call")
+            call_notice = gr.Markdown("")
+            call_chat = gr.Chatbot(height=420, label="Transcript")
+            with gr.Row():
+                call_msg = gr.Textbox(label="Your line as the partner", scale=4)
+                call_send = gr.Button("Send", scale=1)
+            call_panel = gr.Markdown("")
+
         with gr.Tab("Runs"):
             runs_table = gr.Dataframe(
                 headers=RUN_HEADERS,
@@ -487,6 +549,13 @@ def build_ui(get_ctx: Callable[[], Context], demo_mode: bool = False) -> gr.Bloc
                     outbox_table,
                 ],
             )
+        call_outputs = [call_chat, call_panel, call_notice, call_pick]
+        for trigger in (call_tab.select, refresh_calls.click, call_pick.change):
+            trigger(on_calls_refresh, [user_box, call_pick], call_outputs)
+        simulate_btn.click(on_simulate, [user_box, call_pick, persona_pick], call_outputs)
+        live_btn.click(on_live_start, [user_box, call_pick], call_outputs)
+        for trigger in (call_send.click, call_msg.submit):
+            trigger(on_live, [user_box, call_pick, call_msg], [*call_outputs, call_msg])
         refresh_outbox.click(drafts_of, user_box, outbox_table)
         refresh_runs.click(runs_of, user_box, runs_table)
         load_btn.click(load_profile, user_box, fields)

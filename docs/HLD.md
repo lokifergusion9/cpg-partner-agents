@@ -643,6 +643,7 @@ Gradio, mounted on the FastAPI app at `/ui` (`/` redirects there). The UI calls 
 | Chat | The conversation, with a progress line from `run_turn(on_node=...)` (for example "Searching the web..."). A thread that waits for approval answers new messages with a pointer to the Approvals tab. |
 | Leads | The leads of the last search: email with a badge (verified, no mail server, not on the page, invalid), phone and a source link. |
 | Approvals | One block per pending draft with Approve, Edit and approve, or Reject (default Reject), editable subject and body (a call plan can only be approved or rejected), and the outbox and history table. An edit that breaks the policy reappears with the broken rule. |
+| Call | Picks one of the user's calls (a call exists once its plan is approved) and plays it: **Simulate** with a demo persona (`simulate_call`) or **Start live text call** and typed partner lines (`run_call_turn`). Shows the transcript with a stage chip per line and a badge per agent line (checks passed, regenerated once, or fallback line used), the slots panel, the outcome badge, the agreed time in brand time and the confirmation email draft (shown, waiting for approval, never sent). Handlers are in `ui/calls.py`; a refusal (call ended, not started, simulator failed) is a notice, not an error. |
 | Runs | Stage timings in ms, tokens per role, errors and the trace link of the user's runs. |
 | Settings | The user id (random per session unless typed) and the brand profile, with Load and Save. Facts keep their id and tags while their text is unchanged. |
 
