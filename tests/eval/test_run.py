@@ -98,6 +98,25 @@ def test_routing_suite_with_an_oracle_router_and_one_planted_mistake() -> None:
     assert [item["id"] for item in result.items if not item["ok"]] == [victim.id]
 
 
+def test_a_wrong_outreach_channel_makes_the_item_fail_and_is_reported() -> None:
+    rows = dev_rows()
+    answers = {row.query: gold_decision(row).model_dump_json() for row in rows}
+    call = next(row for row in rows if row.outreach_channel == "voice")
+    flipped = gold_decision(call).model_copy(update={"outreach_channel": "email"})
+    answers[call.query] = flipped.model_dump_json()
+    router = OracleRouter.scripted("unused")
+    router.answers = answers
+    result = result_of(runner.run_routing(make_env({"router": router}, split="dev")))
+    item = next(item for item in result.items if item["id"] == call.id)
+    assert (item["gold_channel"], item["predicted_channel"], item["ok"]) == (
+        "voice",
+        "email",
+        False,
+    )
+    assert result.metrics["intent_accuracy"] == 1.0  # the intent was right
+    assert result.metrics["outreach_channel_accuracy"] == pytest.approx(2 / 3)
+
+
 def test_a_router_that_always_fails_clarifies_everything_and_records_the_error() -> None:
     router = ScriptedChatModel.repeating("not json")
     result = result_of(runner.run_routing(make_env({"router": router}, split="dev")))

@@ -318,8 +318,13 @@ async def run_routing(env: Env) -> SuiteResult:
             "gold": row.intent,
             "predicted": decision.intent,
             "ok": row.intent == decision.intent
-            and (row.intent != "discovery" or slots_correct(row, decision)),
+            and (row.intent != "discovery" or slots_correct(row, decision))
+            and (row.intent != "outreach" or row.outreach_channel == decision.outreach_channel),
             "slots_ok": slots_correct(row, decision) if row.intent == "discovery" else None,
+            "gold_channel": row.outreach_channel,
+            "predicted_channel": decision.outreach_channel
+            if decision.intent == "outreach"
+            else None,
             "errors": codes,
         }
         for row, decision, codes in results
