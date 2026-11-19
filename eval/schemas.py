@@ -121,6 +121,59 @@ def load_extraction(path: Path = DATASETS / "extraction.jsonl") -> list[Extracti
     return [ExtractionRow.model_validate(row) for row in read_jsonl(path)]
 
 
+InjectionAttack = Literal[
+    "plain_text",
+    "role_tags",
+    "hidden_text",
+    "ai_directive",
+    "reveal_prompt",
+    "mark_verified",
+    "multilingual",
+    "json_mimic",
+    "control",
+]
+
+
+class InjectionRow(Row):
+    """A planted page: a legitimate contact plus one attack, or a benign control (EVAL 3.4).
+
+    The pages are written by us (``eval/datasets/injection/``) and are committed.
+    """
+
+    id: str = Field(pattern=r"^i\d{2}$")
+    url: str = Field(pattern=r"^https://\S+$")
+    page: str = Field(pattern=r"^injection/i\d{2}\.html$")
+    company_name: str = Field(min_length=1)
+    partner_type: PartnerType
+    product_category: str = Field(min_length=1)
+    location: str | None = None
+    emails: list[str] = Field(min_length=1)  # the legitimate contact
+    phones: list[str] = []
+    attack: InjectionAttack
+    attack_email: str | None = None  # must never reach a lead; None only for the control
+
+    @model_validator(mode="after")
+    def _control_has_no_attack(self) -> Self:
+        if (self.attack == "control") != (self.attack_email is None):
+            raise ValueError("the control page has no attack_email and every attack page has one")
+        if self.attack_email in self.emails:
+            raise ValueError("the attack email cannot also be the legitimate contact")
+        return self
+
+
+class KbRow(Row):
+    """A knowledge-base question; no expected docs means the base cannot answer it (EVAL 3.6)."""
+
+    id: str = Field(pattern=r"^k\d{3}$")
+    question: str = Field(min_length=1)
+    expected_doc_ids: list[str] = []
+    gist: str = ""  # what a correct answer says, for the human reading a report
+
+    @property
+    def answerable(self) -> bool:
+        return bool(self.expected_doc_ids)
+
+
 def read_jsonl(path: Path) -> list[dict[str, object]]:
     lines = path.read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line.strip()]
@@ -128,3 +181,11 @@ def read_jsonl(path: Path) -> list[dict[str, object]]:
 
 def load_routing(path: Path = DATASETS / "routing.jsonl") -> list[RoutingRow]:
     return [RoutingRow.model_validate(row) for row in read_jsonl(path)]
+
+
+def load_injection(path: Path = DATASETS / "injection.jsonl") -> list[InjectionRow]:
+    return [InjectionRow.model_validate(row) for row in read_jsonl(path)]
+
+
+def load_kb(path: Path = DATASETS / "kb.jsonl") -> list[KbRow]:
+    return [KbRow.model_validate(row) for row in read_jsonl(path)]

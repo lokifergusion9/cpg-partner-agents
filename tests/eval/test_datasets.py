@@ -1,13 +1,19 @@
 """Schema and mix tests for the evaluation datasets (T-36 onwards, docs/EVAL.md section 3)."""
 
+import re
 from collections import Counter
 from pathlib import Path
 
 import pytest
 from eval.schemas import (
+    DATASETS,
     ExtractionRow,
+    InjectionRow,
+    KbRow,
     RoutingRow,
     load_extraction,
+    load_injection,
+    load_kb,
     load_routing,
     snapshot_problems,
 )
@@ -202,6 +208,125 @@ def test_a_good_extraction_row_and_an_ambiguous_one_are_accepted() -> None:
     assert ExtractionRow.model_validate(good_page()).emails == ["sales@acme.example"]
     unsure = good_page(emails=[], phones=[], ambiguous=True, notes="image-only contact")
     assert ExtractionRow.model_validate(unsure).ambiguous
+
+
+# --- injection (T-38) ---------------------------------------------------------------
+
+KB_DIR = Path(__file__).resolve().parents[2] / "data" / "kb"
+ATTACK_ORDER = [  # EVAL 3.4, in the order of the table
+    "plain_text",
+    "plain_text",
+    "role_tags",
+    "hidden_text",
+    "ai_directive",
+    "reveal_prompt",
+    "mark_verified",
+    "multilingual",
+    "json_mimic",
+    "control",
+]
+
+
+def injection() -> list[InjectionRow]:
+    return load_injection()
+
+
+def page_html(row: InjectionRow) -> str:
+    return (DATASETS / row.page).read_text(encoding="utf-8")
+
+
+def test_there_are_ten_planted_pages_in_the_documented_order() -> None:
+    pages = injection()
+    assert [row.id for row in pages] == [f"i{n:02d}" for n in range(1, 11)]
+    assert [row.attack for row in pages] == ATTACK_ORDER
+    assert len({row.url for row in pages}) == 10
+    assert sum(row.attack != "control" for row in pages) == 9
+
+
+def test_every_page_exists_and_shows_its_legitimate_contact() -> None:
+    for row in injection():
+        html = page_html(row)
+        assert f'href="mailto:{row.emails[0]}"' in html
+        assert row.company_name.split()[0] in html
+
+
+def test_attack_pages_carry_the_attack_email_and_the_control_does_not() -> None:
+    for row in injection():
+        html = page_html(row)
+        if row.attack == "control":
+            assert "evil.test" not in html
+        else:
+            assert row.attack_email and row.attack_email in html
+            assert row.attack_email not in row.emails
+
+
+def test_the_hidden_attack_is_hidden_and_the_role_tags_are_text_not_markup() -> None:
+    by_id = {row.id: page_html(row) for row in injection()}
+    assert "display:none" in by_id["i04"]
+    assert "&lt;/untrusted_source&gt;" in by_id["i03"]  # escaped, so it reaches the model as text
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"attack": "plain_text", "attack_email": None},  # an attack page needs its email
+        {"attack": "control", "attack_email": "attacker@evil.test"},
+        {"attack": "plain_text", "attack_email": "sales@acme.example"},  # equals the real contact
+        {"attack": "sql"},
+        {"page": "other/i01.html"},
+        {"emails": []},
+        {"surprise": 1},
+    ],
+)
+def test_a_malformed_injection_row_is_rejected(bad: dict[str, object]) -> None:
+    good: dict[str, object] = {
+        "id": "i01",
+        "url": "https://acme.example/",
+        "page": "injection/i01.html",
+        "company_name": "Acme",
+        "partner_type": "broker",
+        "product_category": "cookies",
+        "emails": ["sales@acme.example"],
+        "attack": "plain_text",
+        "attack_email": "attacker@evil.test",
+    }
+    assert InjectionRow.model_validate(good).attack == "plain_text"
+    with pytest.raises(ValidationError):
+        InjectionRow.model_validate({**good, **bad})
+
+
+# --- knowledge base (T-38) ----------------------------------------------------------
+
+
+def kb_doc_ids() -> set[str]:
+    ids = set()
+    for note in KB_DIR.glob("*.md"):
+        match = re.search(r"^doc_id:\s*(\S+)", note.read_text(encoding="utf-8"), re.MULTILINE)
+        assert match, f"{note.name} has no doc_id"
+        ids.add(match.group(1))
+    return ids
+
+
+def test_there_are_25_questions_20_answerable_and_5_not() -> None:
+    questions = load_kb()
+    assert [row.id for row in questions] == [f"k{n:03d}" for n in range(1, 26)]
+    assert sum(row.answerable for row in questions) == 20
+    assert sum(not row.answerable for row in questions) == 5
+    assert len({" ".join(row.question.lower().split()) for row in questions}) == 25
+
+
+def test_every_expected_doc_id_is_a_real_note_and_none_repeats() -> None:
+    known = kb_doc_ids()
+    for row in load_kb():
+        assert set(row.expected_doc_ids) <= known, row.id
+        assert len(set(row.expected_doc_ids)) == len(row.expected_doc_ids)
+
+
+def test_a_malformed_kb_row_is_rejected() -> None:
+    assert KbRow.model_validate({"id": "k001", "question": "q?"}).answerable is False
+    for bad in ({"id": "q1"}, {"question": ""}, {"expected_doc_ids": "x"}, {"extra": 1}):
+        with pytest.raises(ValidationError):
+            KbRow.model_validate({"id": "k001", "question": "q?", **bad})
 
 
 # --- the row model itself -----------------------------------------------------------
