@@ -321,6 +321,12 @@ async def run_routing(env: Env) -> SuiteResult:
             and (row.intent != "discovery" or slots_correct(row, decision))
             and (row.intent != "outreach" or row.outreach_channel == decision.outreach_channel),
             "slots_ok": slots_correct(row, decision) if row.intent == "discovery" else None,
+            "gold_slots": row.discovery.model_dump() if row.discovery else None,
+            "predicted_slots": decision.discovery.model_dump(
+                include={"partner_type", "product_category", "location"}
+            )
+            if decision.discovery
+            else None,
             "gold_channel": row.outreach_channel,
             "predicted_channel": decision.outreach_channel
             if decision.intent == "outreach"

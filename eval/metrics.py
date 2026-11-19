@@ -55,7 +55,13 @@ _STOP = frozenset({"and", "the", "of", "in", "for", "a", "an"})
 
 
 def _stem(word: str) -> str:
-    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
+    """Drop a plural s and fold ``ie`` into ``y``, so that cookies/cookie and supplies/supply
+    (also categories/category) meet in the same stem."""
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        word = word[:-1]
+    if len(word) > 3 and word.endswith("ie"):
+        word = word[:-2] + "y"
+    return word
 
 
 def tokens(text: str) -> frozenset[str]:

@@ -81,6 +81,10 @@ def test_f1_is_none_when_it_is_undefined() -> None:
         ("Gluten Free Snacks", "gluten-free snacks", True),  # hyphen and case
         ("cookies and biscuits", "cookies", True),  # the prediction may say more
         ("snack foods", "snacks", True),  # a plural is the same word
+        ("bakery supply wholesalers", "bakery supplies", True),  # supplies / supply
+        ("cookies", "cookie", True),
+        ("beverage categories", "category", True),
+        ("pies", "pie", True),
         ("snacks", "gluten-free snacks", False),  # but it may not say less
         ("Texas", "California", False),
         (None, None, True),
