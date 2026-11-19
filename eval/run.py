@@ -31,6 +31,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from qdrant_client import AsyncQdrantClient
 
+from eval.calls import run_calls
 from eval.metrics import (
     E2eOutcome,
     InjectionOutcome,
@@ -88,7 +89,8 @@ ROOT = Path(__file__).resolve().parent
 RESULTS = ROOT / "results"
 CACHE_DIR = ROOT / ".cache"
 KB_NOTES = ROOT.parent / "data" / "kb"
-SUITES = ("routing", "extraction", "retrieval", "injection", "kb", "e2e")
+PLAYBOOKS = ROOT.parent / "data" / "playbooks"
+SUITES = ("routing", "extraction", "retrieval", "injection", "kb", "calls", "e2e")
 CONCURRENCY = 4  # pages or questions in flight; LLM_MAX_CONCURRENCY bounds the model calls too
 EVAL_USER = "eval"
 NO_MODEL = ScriptedChatModel.repeating("this suite calls no model")
@@ -105,6 +107,7 @@ class Env:
     count_tokens: TokenCounter | None = None
     fixtures: Path = FIXTURES
     live: bool = False  # a real provider and the real web: the e2e suite may run
+    label_sheet: Path | None = None  # calls suite: write dev transcripts here for hand-labelling
 
 
 def words(text: str) -> int:
@@ -652,6 +655,7 @@ SUITE_FUNCTIONS: dict[str, Callable[[Env], Awaitable[SuiteResult]]] = {
     "retrieval": run_retrieval,
     "injection": run_injection,
     "kb": run_kb,
+    "calls": run_calls,
     "e2e": run_e2e,
 }
 
@@ -661,6 +665,11 @@ DATASET_FILES: dict[str, tuple[Path, ...]] = {
     "retrieval": (DATASETS / "extraction.jsonl",),
     "injection": (DATASETS / "injection.jsonl", DATASETS / "extraction.jsonl"),
     "kb": (DATASETS / "kb.jsonl", *sorted(KB_NOTES.glob("*.md"))),
+    "calls": (
+        DATASETS / "personas.jsonl",
+        DATASETS / "call_labels.jsonl",
+        PLAYBOOKS / "partner_intro.toml",
+    ),
     "e2e": (DATASETS / "e2e.jsonl",),
 }
 
@@ -675,7 +684,7 @@ def file_hash(paths: Sequence[Path]) -> str:
 
 def dataset_hashes(suite: str) -> dict[str, str]:
     paths = DATASET_FILES.get(suite, ())
-    hashes = {path.name: file_hash([path]) for path in paths if path.suffix == ".jsonl"}
+    hashes = {path.name: file_hash([path]) for path in paths if path.suffix in (".jsonl", ".toml")}
     notes = [path for path in paths if path.suffix == ".md"]
     if notes:
         hashes["kb notes"] = file_hash(notes)
@@ -724,7 +733,7 @@ def build_settings(
     return Settings(**fields)  # keys come from the environment / .env
 
 
-def build_env(settings: Settings, split: Split) -> Env:
+def build_env(settings: Settings, split: Split, label_sheet: Path | None = None) -> Env:
     fake = settings.llm_provider == "fake"
     return Env(
         settings=settings,
@@ -735,6 +744,7 @@ def build_env(settings: Settings, split: Split) -> Env:
         split=split,
         count_tokens=words if fake else None,
         live=not fake,
+        label_sheet=label_sheet,
     )
 
 
@@ -802,7 +812,7 @@ def write_report(
         "n": result.n,
         "models": dict(models),
         "tokens": dict(tokens),
-        "prompt_versions": PROMPT_VERSIONS,
+        "prompt_versions": {**PROMPT_VERSIONS, **result.prompt_versions},
         "datasets": dataset_hashes(result.suite),
         "config_overrides": dict(overrides),
         "cache": dict(cache),
@@ -854,16 +864,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-cache", action="store_true", help="make every model call fresh")
     parser.add_argument("--config", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--out", type=Path, default=RESULTS, help="folder for the reports")
+    parser.add_argument(
+        "--label-sheet",
+        type=Path,
+        help="calls suite: write dev transcripts here, to label by hand for call_labels.jsonl",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.provider == "fake":  # every call fails on purpose: do not log each one
-        logging.getLogger("partner_agents").setLevel(logging.ERROR)
+        for name in ("partner_agents", "eval"):
+            logging.getLogger(name).setLevel(logging.ERROR)
     overrides = parse_config(args.config)
     settings = build_settings(args.provider, args.roles, args.no_cache, overrides)
-    env = build_env(settings, args.split)
+    env = build_env(settings, args.split, args.label_sheet)
     names = list(SUITES) if args.suite == "all" else [args.suite]
 
     async def go() -> None:

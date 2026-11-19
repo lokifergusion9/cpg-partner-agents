@@ -139,6 +139,10 @@ Each persona is a card that the `simulator` role plays against the call agent. H
 
 **Human labels for the judge (ADR-020).** 15 dev transcripts are labelled by hand, pass/fail per soft rule, in `eval/datasets/call_labels.jsonl`.
 
+**As built (T-62).** `eval/datasets/personas.jsonl` holds the 30 personas (10 dev `p001`-`p010`, 20 test `p011`-`p030`) in the mix above; `gold_outcome` is one outcome or a short list the card allows (a distressed partner may book or ask for a call; a vague one ends `callback_booked` or `incomplete`, never `meeting_booked`). `must_hold` lists playbook rule ids and bare check ids. A code rule holds when its check never failed on a line that was sent, plus, for the few rules that describe a situation, when the agent did what the rule asks (`U-OPT-1`: the call ended on the next agent line as `opted_out`; `U-AI-2`: every "are you a bot?" was answered with `disclose_ai`; `U-HUMAN-1`: `escalated_to_human`; `Q-STOP-1`: `disqualified`; `U-RETRY-1`: at most one `retry_once` per stage; `O-1`: a busy partner was offered a callback). A judge rule holds when the judge says `pass`; if the judge failed, the rule is counted as unjudged, not as failed. The eval personas are separate from the demo ones in `data/personas/` (a test checks that no demo name appears).
+
+**The 15 labelled transcripts are still to be written by a human.** `uv run python -m eval.run --suite calls --split dev --provider <p> --label-sheet eval/datasets/call_labels.jsonl` runs the dev personas and writes up to 15 transcripts with every verdict empty. Fill in `pass` / `fail` / `na` per soft rule and `partner_agreed_to_time` by hand and keep the file; the loader refuses a row with an empty verdict, so unlabelled transcripts cannot count. The file is empty today, so the judge's agreement is "n/a" and every judge-based number (soft rules, unsupported claims, booking precision) is reported as indicative (agreement < 0.8 or unknown). Labels are compared against a fresh judge reading of the stored transcript, one comparison per soft-rule verdict plus one for the booked-time flag.
+
 ## 4. Metrics
 
 ### 4.1 Routing
@@ -228,7 +232,7 @@ uv run python -m eval.run --suite all --provider fake            # offline smoke
 - The knowledge-base suite ingests `data/kb/` into an in-memory Qdrant and reads the cited doc ids back from the `Sources:` block of each reply.
 - The e2e suite runs only with a real provider (it builds the full app and uses the live web); with `fake` it reports `skipped`. Cost is not estimated yet: the config has no price table. The 20 spot-checked leads (`spot_check.md`) are still a human step.
 - `--no-cache` and the fake provider turn the LLM cache off; otherwise it is `eval/.cache/` (gitignored), keyed by provider, model, temperature, prompt version, schema and messages (`llm.invoke_structured`). The report's `cache` field holds `llm_hits` / `llm_misses` for the run.
-- The `calls` suite arrives with T-62.
+- The `calls` suite (T-62, `eval/calls.py` and `eval/call_metrics.py`) plays every persona of the split with the `simulator` role against the stage machine (or, with `--config CALL_CONTROL=prompt_only`, the single-prompt baseline of A8), then has the `judge` role read each call. A call whose simulator fails is excluded and listed in the notes; read the transcripts in the report for personas that broke character and re-run them. Per-turn timing is measured for the stage machine only.
 
 Outputs go to `eval/results/<YYYY-MM-DD>_<suite>_<provider>.json` and `.md`. Each report header records the git SHA, provider + model ids per role, prompt versions, dataset file hashes, the config overrides and the cache hit rate. Results files are committed. They are the evidence.
 

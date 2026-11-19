@@ -371,3 +371,4 @@ class SuiteResult:
     items: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     skipped: str | None = None  # why the suite did not run (for example "needs a live provider")
+    prompt_versions: dict[str, str] = field(default_factory=dict)  # prompts the suite itself used

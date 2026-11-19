@@ -19,6 +19,7 @@ DEMO_MAX_RESULTS = 5
 
 OutreachMode = Literal["outbox", "gmail_draft", "gmail_send"]
 VoiceProvider = Literal["mock", "vapi"]
+CallControl = Literal["stage_machine", "prompt_only"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 Role = Literal["router", "extractor", "writer", "classifier", "caller", "simulator", "judge"]
 
@@ -192,6 +193,9 @@ class Settings(BaseSettings):
     call_playbook: str = Field("partner_intro", pattern=r"^[a-z0-9_]{1,64}$")
     call_max_turns: int = Field(30, ge=1)  # the smaller of this and the playbook's max_turns
     call_reply_max_words: int = Field(60, ge=10)
+    # "prompt_only" is the single-prompt baseline of eval ablation A8. Only ``eval.run --suite
+    # calls`` reads it; the API and the Call tab always use the stage machine.
+    call_control: CallControl = "stage_machine"
 
     # Live voice (ADR-021): needs ``uv sync --extra speech`` and a Piper voice file
     speech_enabled: bool = False

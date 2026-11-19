@@ -12,7 +12,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from partner_agents.schemas import Intent, PartnerType
+from partner_agents.schemas import CallOutcome, Intent, PartnerType, Persona
 
 DATASETS = Path(__file__).resolve().parent / "datasets"
 Split = Literal["dev", "test"]
@@ -174,6 +174,77 @@ class KbRow(Row):
         return bool(self.expected_doc_ids)
 
 
+PersonaArchetype = Literal[
+    "interested_books",
+    "interested_busy",
+    "not_taking_lines",
+    "mismatch",
+    "wrong_person",
+    "stop_calling",
+    "wants_human",
+    "distressed_then_engages",
+    "adversarial_discount",
+    "adversarial_ai",
+    "vague_time",
+]
+
+
+class PersonaRow(Row):
+    """A simulated partner and what should happen on the call (EVAL section 3.7)."""
+
+    id: str = Field(pattern=r"^p\d{3}$")
+    split: Split
+    archetype: PersonaArchetype
+    card: str = Field(min_length=20)
+    hidden_facts: dict[str, str] = {}
+    behaviour: list[str] = []
+    # One outcome, or the few that the card allows (a distressed partner may book or ask for a call)
+    gold_outcome: CallOutcome | list[CallOutcome]
+    # Playbook rule ids (U-OPT-1, Q-STOP-1, ...) and check ids (C-NUM, ...) that must hold
+    must_hold: list[str] = Field(min_length=1)
+
+    @property
+    def golds(self) -> list[CallOutcome]:
+        return [self.gold_outcome] if isinstance(self.gold_outcome, str) else self.gold_outcome
+
+    @model_validator(mode="after")
+    def _golds_are_not_empty(self) -> Self:
+        if not self.golds or len(set(self.golds)) != len(self.golds):
+            raise ValueError("gold_outcome needs one or more distinct outcomes")
+        if len(set(self.must_hold)) != len(self.must_hold):
+            raise ValueError("a must_hold rule is listed twice")
+        return self
+
+    def to_persona(self) -> Persona:
+        """The card the simulator plays. The gold outcome is not given to it."""
+        return Persona(
+            id=self.id,
+            title=self.archetype,
+            card=self.card,
+            hidden_facts=self.hidden_facts,
+            behaviour=self.behaviour,
+        )
+
+
+class LabelledLine(Row):
+    speaker: Literal["agent", "partner"]
+    text: str = Field(min_length=1)
+
+
+class CallLabelRow(Row):
+    """A call transcript with a human's verdict per soft rule, to check the judge (ADR-020).
+
+    Every verdict must be filled in: a sheet exported by ``--label-sheet`` has none, and a row
+    with a missing verdict is rejected, so an unlabelled transcript cannot count as agreement.
+    """
+
+    id: str = Field(pattern=r"^L\d{2}$")
+    persona_id: str = Field(pattern=r"^p\d{3}$")
+    transcript: list[LabelledLine] = Field(min_length=2)
+    labels: dict[str, Literal["pass", "fail", "na"]] = Field(min_length=1)
+    partner_agreed_to_time: bool
+
+
 class E2eRow(Row):
     """A live query for the e2e suite; there is no gold label, only measurements (EVAL 3.5)."""
 
@@ -200,3 +271,13 @@ def load_kb(path: Path = DATASETS / "kb.jsonl") -> list[KbRow]:
 
 def load_e2e(path: Path = DATASETS / "e2e.jsonl") -> list[E2eRow]:
     return [E2eRow.model_validate(row) for row in read_jsonl(path)]
+
+
+def load_personas(path: Path = DATASETS / "personas.jsonl") -> list[PersonaRow]:
+    return [PersonaRow.model_validate(row) for row in read_jsonl(path)]
+
+
+def load_call_labels(path: Path = DATASETS / "call_labels.jsonl") -> list[CallLabelRow]:
+    if not path.exists():
+        return []
+    return [CallLabelRow.model_validate(row) for row in read_jsonl(path)]

@@ -54,7 +54,7 @@ src/partner_agents/
   retrieval/       chunking.py, embeddings.py, store.py, evidence.py
   verify/          contacts.py
   outreach/        policy.py, email.py, voice.py
-  calls/           playbook.py, stages.py (pure), scheduler.py (pure), classify.py, checks.py (pure), reply.py, personas.py, simulator.py, speech.py
+  calls/           playbook.py, stages.py (pure), scheduler.py (pure), classify.py, checks.py (pure), reply.py, personas.py, simulator.py, baseline.py (eval only), speech.py
   kb/              ingest.py, qa.py
   storage/         repo.py (Repository protocol, in-memory + Mongo)
   api/             main.py, routes.py, ratelimit.py
@@ -64,7 +64,7 @@ src/partner_agents/
   utils/contacts.py  email / phone detection patterns (detect only; verify/ decides)
   web/html.py      page text assembly (main text, contact text, contact link)
   cli.py
-eval/              datasets/, fixtures/pages/ (gitignored snapshots), schemas.py (row models and loaders), snapshot.py, run.py, metrics.py, results/
+eval/              datasets/, fixtures/pages/ (gitignored snapshots), schemas.py (row models and loaders), snapshot.py, run.py, metrics.py, calls.py + call_metrics.py (the calls suite), results/
 data/kb/           CPG knowledge-base notes (public sources, cited)
 data/playbooks/    call playbooks (TOML, written from scratch for the fictional brand)
 data/personas/     demo personas for the Call tab (the eval personas live in eval/datasets/)
