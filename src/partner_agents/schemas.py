@@ -221,6 +221,7 @@ class RunRecord(BaseModel):
     errors: list[StageError]
     trace_url: str | None = None
     providers: dict[str, str] = {}  # role -> "provider:model" that actually answered (ADR-018)
+    cache: dict[str, int] = {}  # search_hits / search_misses / embed_hits / embed_misses (T-34)
 
 
 # --- Call agent (HLD §4.1, §6.11) ---------------------------------------------------------

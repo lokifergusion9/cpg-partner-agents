@@ -20,6 +20,7 @@ from pydantic import HttpUrl, TypeAdapter, ValidationError
 from partner_agents.config import SearchProviderName, Settings
 from partner_agents.schemas import DiscoveryIntent, PartnerType, SearchHit, StageError
 from partner_agents.storage.repo import Repository
+from partner_agents.utils.cache_stats import record_cache
 from partner_agents.utils.retry import DEFAULT_POLICY, retry_async
 
 logger = logging.getLogger(__name__)
@@ -291,7 +292,9 @@ class SearchService:
         key = cache_key(query)
         cached = await self._repo.get_cached_search(key)
         if cached is not None:
+            record_cache("search", hits=1)
             return cached, 1, None
+        record_cache("search", misses=1)  # the provider is called now
         failures: list[str] = []
         for provider in self._providers:
             try:

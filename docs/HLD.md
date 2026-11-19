@@ -179,6 +179,7 @@ class RunRecord(BaseModel):
     timings_ms: dict[str, int]; tokens: dict[str, int]      # per role
     prompt_versions: dict[str, str]; errors: list[StageError]
     trace_url: str | None = None
+    cache: dict[str, int] = {}             # search_hits / search_misses / embed_hits / embed_misses (T-34)
     providers: dict[str, str] = {}         # role -> "provider:model" that actually answered (ADR-018)
 ```
 
@@ -398,7 +399,7 @@ The graph is compiled with a checkpointer (`InMemorySaver` in tests, MongoDB sav
   2. Dedupe by registrable domain (keep the best rank).
   3. Drop domains on `SEARCH_DOMAIN_BLOCKLIST` (social networks, marketplaces, large directories, news).
   4. Keep the top `max_results`.
-- Search results are cached in `repo.search_cache` keyed by the normalised query (lower-cased, whitespace collapsed; TTL 24 h). Every query asks for the same 20 results, so a cached answer serves any `max_results`. Empty and failed answers are not cached.
+- Search results are cached in `repo.search_cache` keyed by the normalised query (lower-cased, whitespace collapsed; TTL 24 h). Every query asks for the same 20 results, so a cached answer serves any `max_results`. Empty and failed answers are not cached. Each query counts one `search_hits` (served from the cache) or one `search_misses` (a provider is called) in `RunRecord.cache`; the embedding LRU (§6.5) counts `embed_hits` / `embed_misses` per text the same way. The counters are per run (`utils/cache_stats.track_cache`, a context variable like the token counts); a resumed approval adds its own to the run's. A counter that stays at 0 is absent from the dict.
 - Per query, providers are tried in order: an error or an empty answer moves on to the next. If none answers, the service returns a `StageError` (`scout_search`; code `search_failed`, `no_results` or `no_provider`) instead of hits. A provider failure that a later provider recovers from is only logged.
 - URL normalisation lower-cases the host, drops fragments, default ports and tracking parameters (`utm_*`, `gclid`, `fbclid`, …). Dedupe uses the registrable domain from the bundled public-suffix list (ADR-023); the blocklist matches a domain and its subdomains. The merged list is re-ranked 1..N.
 - Tavily is called over REST with httpx; DuckDuckGo through `ddgs` in a worker thread (ADR-006). Tavily without `TAVILY_API_KEY` is skipped, leaving DuckDuckGo alone.

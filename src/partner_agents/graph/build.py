@@ -61,6 +61,7 @@ from partner_agents.tracing import (
     start_trace,
     traced_config,
 )
+from partner_agents.utils.cache_stats import track_cache
 from partner_agents.web.fetch import Fetcher
 from partner_agents.web.search import SearchService, build_providers
 
@@ -300,6 +301,7 @@ class _Observed:
     prompt_versions: dict[str, str] = field(default_factory=dict)
     tokens: dict[str, int] = field(default_factory=dict)
     providers: dict[str, str] = field(default_factory=dict)
+    cache: dict[str, int] = field(default_factory=dict)
     trace_url: str | None = None
 
 
@@ -329,7 +331,12 @@ async def _drive(
     """
     seen = _Observed()
     traced = cast(RunnableConfig, traced_config(config, trace))
-    with run_context(run_id), track_usage() as tokens, track_providers() as providers:
+    with (
+        run_context(run_id),
+        track_usage() as tokens,
+        track_providers() as providers,
+        track_cache() as cache,
+    ):
         async for chunk in graph.astream(graph_input, traced, stream_mode="updates"):
             for node, update in chunk.items():
                 if not isinstance(update, dict):
@@ -341,7 +348,7 @@ async def _drive(
                 if node in _PROMPTS:
                     module, version = _PROMPTS[node]
                     seen.prompt_versions[module] = version
-    seen.tokens, seen.providers = dict(tokens), dict(providers)
+    seen.tokens, seen.providers, seen.cache = dict(tokens), dict(providers), dict(cache)
     seen.trace_url = await finish_trace(trace)
     return seen
 
@@ -400,6 +407,7 @@ async def run_turn(
         prompt_versions=seen.prompt_versions,
         errors=seen.errors,
         providers=seen.providers,
+        cache=seen.cache,
         trace_url=seen.trace_url,
     )
     await deps.repo.save_run(run)
@@ -441,6 +449,9 @@ async def resume_turn(
                 k: run.tokens.get(k, 0) + seen.tokens.get(k, 0) for k in {*run.tokens, *seen.tokens}
             },
             "providers": {**run.providers, **seen.providers},
+            "cache": {
+                k: run.cache.get(k, 0) + seen.cache.get(k, 0) for k in {*run.cache, *seen.cache}
+            },
             "trace_url": run.trace_url or seen.trace_url,  # the resume has its own trace
         }
     )

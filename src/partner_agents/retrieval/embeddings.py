@@ -13,6 +13,8 @@ from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
+from partner_agents.utils.cache_stats import record_cache
+
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 EMBEDDING_DIMENSION = 384
 BATCH_SIZE = 32
@@ -69,15 +71,19 @@ class SentenceTransformerEmbedder:
     async def _embed(self, texts: list[str]) -> list[list[float]]:
         keys = [hashlib.sha256(text.encode("utf-8")).hexdigest() for text in texts]
         missing: dict[str, str] = {}  # key -> text, each distinct text once
+        hits = misses = 0
         for key, text in zip(keys, texts, strict=True):
             if key in self._cache:
                 self._cache.move_to_end(key)
-                self.cache_hits += 1
+                hits += 1
             elif key not in missing:
                 missing[key] = text
-                self.cache_misses += 1
+                misses += 1
             else:
-                self.cache_hits += 1
+                hits += 1
+        self.cache_hits += hits
+        self.cache_misses += misses
+        record_cache("embed", hits=hits, misses=misses)  # this run's counters (RunRecord.cache)
         pending = list(missing.items())
         for offset in range(0, len(pending), self._batch_size):
             batch = pending[offset : offset + self._batch_size]
