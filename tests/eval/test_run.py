@@ -376,7 +376,7 @@ def test_the_command_line_writes_a_json_and_a_markdown_report(tmp_path: Path) ->
         ]
     )
     assert code == 0
-    (json_path,) = tmp_path.glob("*_routing_fake.json")
+    (json_path,) = tmp_path.glob("*_routing_fake_chunk_tokens-500.json")
     report = json.loads(json_path.read_text(encoding="utf-8"))
     assert report["suite"] == "routing" and report["provider"] == "fake" and report["n"] == 20
     assert report["split"] == "dev" and report["config_overrides"] == {"chunk_tokens": "500"}
@@ -411,3 +411,38 @@ def test_every_suite_runs_offline_with_the_fake_provider(tmp_path: Path) -> None
     assert reports["injection"]["n"] == 10 and reports["injection"]["metrics"]["attack_pages"] == 9
     assert reports["kb"]["metrics"]["abstention_accuracy"] == 1.0  # a failed writer abstains
     assert reports["kb"]["notes"] and "hashing embedder" in reports["kb"]["notes"][-1]
+
+
+def test_a_suite_that_called_no_model_is_reported_as_provider_none_with_its_embedder(
+    tmp_path: Path,
+) -> None:
+    """Retrieval calls no model, so it is not a "gemini" run because gemini is the default; and a
+    run with overrides gets its own file instead of overwriting the default run's."""
+    configured = Settings(  # type: ignore[call-arg]
+        _env_file=None, llm_provider="gemini", llm_roles="simulator=ollama:qwen2.5:7b"
+    )
+    result = SuiteResult("retrieval", 26, {"recall": 1.0})
+
+    def report(models: dict[str, str], overrides: dict[str, str]) -> Path:
+        json_path, _ = runner.write_report(
+            result,
+            settings=configured,
+            split="test",
+            tokens={},
+            models=models,
+            cache={},
+            out_dir=tmp_path,
+            overrides=overrides,
+            embedder="BAAI/bge-small-en-v1.5",
+        )
+        return json_path
+
+    plain = report({}, {})
+    assert plain.name.endswith("_retrieval_none_simulator-ollama-qwen2.5-7b.json")
+    tuned = report({}, {"chunk_tokens": "500"})
+    assert tuned != plain and "chunk_tokens-500" in tuned.name
+    data = json.loads(tuned.read_text(encoding="utf-8"))
+    assert data["provider"] == "none" and data["embedder"] == "BAAI/bge-small-en-v1.5"
+    assert "| embedder | BAAI/bge-small-en-v1.5 |" in tuned.with_suffix(".md").read_text("utf-8")
+    used = report({"router": "gemini:some-model"}, {})
+    assert json.loads(used.read_text(encoding="utf-8"))["provider"] == "gemini"

@@ -649,6 +649,8 @@ async def run_e2e(env: Env) -> SuiteResult:
 
 # --- suites, settings, reports ------------------------------------------------------
 
+EMBEDDER_SUITES = ("extraction", "retrieval", "injection", "kb")
+
 SUITE_FUNCTIONS: dict[str, Callable[[Env], Awaitable[SuiteResult]]] = {
     "routing": run_routing,
     "extraction": run_extraction,
@@ -766,7 +768,9 @@ def flatten(prefix: str, value: Any) -> list[tuple[str, Any]]:
 
 
 def render_markdown(report: Mapping[str, Any]) -> str:
-    meta_keys = ("date", "git", "provider", "split", "n")
+    meta_keys = ["date", "git", "provider", "split", "n"]
+    if report.get("embedder"):
+        meta_keys.insert(3, "embedder")
     lines = [f"# Eval: {report['suite']}", "", "| | |", "|---|---|"]
     lines += [f"| {key} | {fmt(report.get(key))} |" for key in meta_keys]
     lines += [f"| models | {fmt(report['models'] or 'none called')} |"]
@@ -790,6 +794,16 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def run_tag(settings: Settings, overrides: Mapping[str, str]) -> str:
+    """A short file-name tag for what differs from the default run: overrides and role models."""
+    parts = [f"{key}-{value}" for key, value in sorted(overrides.items())]
+    parts += [
+        f"{role}-{spec.provider}-{spec.model or 'default'}"
+        for role, spec in sorted(settings.llm_roles.items())
+    ]
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", "_".join(parts)).strip("-_")
+
+
 def write_report(
     result: SuiteResult,
     *,
@@ -800,14 +814,22 @@ def write_report(
     cache: Mapping[str, int],
     out_dir: Path,
     overrides: Mapping[str, str],
+    embedder: str | None = None,
 ) -> tuple[Path, Path]:
     now = datetime.now(UTC)
+    # A suite that called no model (retrieval) is not a "gemini" run just because gemini is the
+    # configured default, and a run with overrides must not overwrite the default run's files.
+    called_a_model = bool(models) or result.skipped is not None
+    provider = (
+        settings.llm_provider if called_a_model or settings.llm_provider == "fake" else "none"
+    )
     report: dict[str, Any] = {
         "suite": result.suite,
-        "date": now.date().isoformat(),
+        "date": now.astimezone().date().isoformat(),  # the local day, as the task log uses
         "generated_at": now.isoformat(timespec="seconds"),
         "git": git_state(),
-        "provider": settings.llm_provider,
+        "provider": provider,
+        "embedder": embedder,
         "split": split,
         "n": result.n,
         "models": dict(models),
@@ -821,7 +843,8 @@ def write_report(
         "notes": result.notes,
         "items": result.items,
     }
-    stem = f"{report['date']}_{result.suite}_{settings.llm_provider}"
+    tag = run_tag(settings, overrides)
+    stem = f"{report['date']}_{result.suite}_{provider}" + (f"_{tag}" if tag else "")
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path, md_path = out_dir / f"{stem}.json", out_dir / f"{stem}.md"
     json_path.write_text(
@@ -838,6 +861,13 @@ async def run_suite(
         result = await SUITE_FUNCTIONS[suite](env)
     if isinstance(env.embedder, HashingEmbedder) and suite in ("extraction", "retrieval", "kb"):
         result.notes.append("embedder: the offline hashing embedder, not bge-small (fake provider)")
+    embedder = None
+    if suite in EMBEDDER_SUITES:
+        embedder = (
+            "hashing (offline, not a real embedding model)"
+            if isinstance(env.embedder, HashingEmbedder)
+            else env.settings.embedding_model
+        )
     json_path, _ = write_report(
         result,
         settings=env.settings,
@@ -847,6 +877,7 @@ async def run_suite(
         cache=cache,
         out_dir=out_dir,
         overrides=overrides,
+        embedder=embedder,
     )
     status = f"skipped ({result.skipped})" if result.skipped else f"n={result.n}"
     print(f"{suite}: {status} -> {json_path}")
